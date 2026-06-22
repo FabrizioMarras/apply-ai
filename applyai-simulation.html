@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ApplyAI — Simulation</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Inter', system-ui, sans-serif; background: #f4f6f9; color: #0f1117; font-size: 14px; }
+button, input, textarea { font-family: inherit; }
+.screen { display: none; min-height: 100vh; flex-direction: column; }
+.screen.active { display: flex; }
+nav { background: #0f1117; height: 56px; display: flex; align-items: center; padding: 0 28px; justify-content: space-between; flex-shrink: 0; }
+.nav-logo { display: flex; align-items: center; gap: 10px; }
+.nav-icon { width: 28px; height: 28px; background: #4f46e5; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.nav-name { color: #fff; font-weight: 800; font-size: 15px; }
+.nav-right { display: flex; align-items: center; gap: 16px; }
+.nav-email { color: rgba(255,255,255,.35); font-size: 12px; }
+.nav-out { color: rgba(255,255,255,.4); font-size: 12px; font-weight: 600; cursor: pointer; border: none; background: none; }
+.center-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #f4f6f9; }
+.auth-box { background: #fff; border-radius: 20px; padding: 40px; width: 100%; max-width: 380px; box-shadow: 0 2px 20px rgba(0,0,0,.08); }
+.auth-logo { text-align: center; margin-bottom: 28px; }
+.auth-logo-icon { width: 52px; height: 52px; background: #4f46e5; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 12px; }
+.auth-logo h1 { font-size: 22px; font-weight: 800; }
+.auth-logo p { color: #64748b; font-size: 13px; margin-top: 3px; }
+.sim-note { background: #ede9fe; border-radius: 10px; padding: 10px 14px; font-size: 12px; color: #6366f1; margin-bottom: 20px; font-weight: 500; }
+.field { margin-bottom: 16px; }
+.field label { display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 5px; }
+.field input { width: 100%; padding: 10px 13px; border-radius: 10px; border: 1.5px solid #e5e7eb; font-size: 13px; outline: none; }
+.field input:focus { border-color: #4f46e5; }
+.btn-primary { width: 100%; padding: 12px; background: #4f46e5; color: #fff; border: none; border-radius: 12px; font-weight: 700; font-size: 14px; cursor: pointer; }
+.btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+.auth-switch { text-align: center; font-size: 13px; color: #64748b; margin-top: 18px; }
+.auth-switch span { color: #4f46e5; font-weight: 700; cursor: pointer; }
+.setup-box { background: #fff; border-radius: 20px; padding: 40px; width: 100%; max-width: 480px; box-shadow: 0 2px 20px rgba(0,0,0,.08); }
+.drop-zone { border: 2px dashed #e5e7eb; border-radius: 14px; padding: 48px 24px; text-align: center; cursor: pointer; transition: all .2s; margin-bottom: 20px; }
+.drop-zone:hover, .drop-zone.has-file { border-color: #10b981; background: #f0fdf4; }
+.dz-icon { font-size: 40px; margin-bottom: 10px; }
+.dz-title { font-weight: 700; margin-bottom: 4px; }
+.dz-sub { font-size: 12px; color: #64748b; }
+.prog-bar { height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; margin-bottom: 8px; display: none; }
+.prog-fill { height: 100%; background: #4f46e5; border-radius: 3px; width: 0; transition: width .1s; }
+.prog-label { font-size: 12px; color: #64748b; text-align: center; }
+.main { max-width: 1060px; margin: 0 auto; padding: 28px; flex: 1; width: 100%; }
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+.stat-card { background: #fff; border-radius: 14px; padding: 18px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); border-left: 4px solid; }
+.stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin-bottom: 4px; }
+.stat-value { font-size: 30px; font-weight: 800; line-height: 1; }
+.stat-sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+.process-bar { background: #fff; border-radius: 14px; padding: 18px 22px; box-shadow: 0 1px 4px rgba(0,0,0,.06); margin-bottom: 22px; }
+.process-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin-bottom: 10px; }
+.process-row { display: flex; gap: 10px; }
+.process-input { flex: 1; padding: 10px 14px; border-radius: 10px; border: 1.5px solid #e5e7eb; font-size: 13px; outline: none; }
+.process-input:focus { border-color: #4f46e5; }
+.btn-analyse { padding: 10px 20px; background: #4f46e5; color: #fff; border: none; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.btn-analyse:disabled { opacity: .4; cursor: not-allowed; }
+.pipeline-steps { margin-top: 12px; display: none; }
+.p-step { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12px; color: #94a3b8; }
+.p-step.active { color: #4f46e5; }
+.p-step.done { color: #10b981; }
+.p-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.p-dot.spin { animation: spin .7s linear infinite; }
+.result-banner { margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-size: 13px; font-weight: 500; display: none; }
+.result-banner.ok { background: #f0fdf4; color: #166534; }
+.result-banner.skip { background: #fffbeb; color: #92400e; }
+.filters-row { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+.f-search { padding: 8px 12px; border-radius: 9px; border: 1.5px solid #e5e7eb; font-size: 13px; outline: none; width: 170px; }
+.pills { display: flex; gap: 5px; flex-wrap: wrap; }
+.pill { padding: 5px 12px; border-radius: 20px; border: 1.5px solid #e5e7eb; background: #fff; color: #64748b; font-weight: 700; font-size: 11px; cursor: pointer; }
+.pill.active { border-color: var(--c); background: var(--bg); color: var(--c); }
+.sort-grp { margin-left: auto; display: flex; gap: 5px; }
+.sort-btn { padding: 5px 11px; border-radius: 7px; border: 1.5px solid #e5e7eb; background: #fff; color: #94a3b8; font-weight: 700; font-size: 11px; cursor: pointer; }
+.sort-btn.active { border-color: #4f46e5; background: #ede9fe; color: #4f46e5; }
+.table-wrap { background: #fff; border-radius: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.06); overflow: hidden; }
+.t-head { display: grid; grid-template-columns: 52px 1.6fr 1fr 100px 72px 150px; padding: 11px 18px; border-bottom: 1px solid #f1f5f9; }
+.th { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #94a3b8; }
+.t-row { display: grid; grid-template-columns: 52px 1.6fr 1fr 100px 72px 150px; padding: 13px 18px; border-bottom: 1px solid #f8fafc; cursor: pointer; align-items: center; transition: background .12s; }
+.t-row:last-child { border-bottom: none; }
+.t-row:hover { background: #f8fafc; }
+.t-row.sel { background: #fafafe; }
+.score-badge { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; }
+.co-name { font-weight: 700; font-size: 13px; }
+.co-role { font-size: 12px; color: #64748b; margin-top: 2px; }
+.loc { font-size: 12px; color: #64748b; }
+.wbadge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 6px; display: inline-block; text-transform: capitalize; }
+.date { font-size: 12px; color: #94a3b8; }
+.sw { position: relative; }
+.spill { border-radius: 20px; padding: 4px 10px; font-size: 11px; font-weight: 700; cursor: pointer; border: none; }
+.sdd { position: absolute; top: 110%; left: 0; z-index: 200; background: #fff; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.14); padding: 5px; min-width: 148px; display: none; }
+.sdd.open { display: block; }
+.sopt { display: block; width: 100%; text-align: left; padding: 7px 11px; border: none; border-radius: 7px; font-weight: 700; font-size: 12px; cursor: pointer; background: transparent; }
+.empty { padding: 56px; text-align: center; color: #94a3b8; font-size: 13px; }
+.t-footer { font-size: 11px; color: #d1d5db; text-align: center; margin-top: 12px; }
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.18); z-index: 100; display: none; }
+.overlay.open { display: block; }
+.panel { position: fixed; right: -480px; top: 0; bottom: 0; width: 460px; background: #fff; box-shadow: -6px 0 36px rgba(0,0,0,.12); z-index: 101; display: flex; flex-direction: column; overflow-y: auto; transition: right .25s cubic-bezier(.4,0,.2,1); }
+.panel.open { right: 0; }
+.p-head { padding: 20px 24px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: flex-start; position: sticky; top: 0; background: #fff; z-index: 1; }
+.p-co { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #94a3b8; margin-bottom: 3px; }
+.p-role { font-size: 19px; font-weight: 800; }
+.p-loc { font-size: 12px; color: #64748b; margin-top: 3px; }
+.close-btn { background: none; border: none; font-size: 26px; cursor: pointer; color: #94a3b8; line-height: 1; }
+.p-body { padding: 18px 24px; display: flex; flex-direction: column; gap: 16px; flex: 1; }
+.sec-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 7px; }
+.tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.tag { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 7px; }
+.tag.g { background: #f0fdf4; color: #166534; }
+.tag.r { background: #fef2f2; color: #991b1b; }
+.dl-row { display: flex; gap: 8px; }
+.dl-btn-main { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 11px 14px; background: #4f46e5; color: #fff; border-radius: 12px; font-weight: 700; font-size: 12px; cursor: pointer; border: none; }
+.dl-btn-main:hover { background: #4338ca; }
+.dl-btn-sec { display: flex; align-items: center; justify-content: center; padding: 11px 14px; background: #f3f4f6; color: #374151; border-radius: 12px; font-weight: 700; font-size: 12px; cursor: pointer; border: none; }
+.dl-btn-sec:hover { background: #e5e7eb; }
+.cv-preview { background: #f8fafc; border-radius: 12px; border: 1px solid #e5e7eb; overflow: hidden; }
+.cv-preview-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #e5e7eb; }
+.cv-preview-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #64748b; }
+.cv-toggle { font-size: 11px; font-weight: 700; color: #4f46e5; background: none; border: none; cursor: pointer; }
+.cv-preview-body { padding: 14px; font-size: 12px; line-height: 1.75; color: #374151; display: none; max-height: 380px; overflow-y: auto; }
+.cv-preview-body.open { display: block; }
+.cv-sec-title { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: #4f46e5; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin: 14px 0 8px; }
+.cv-sec-title:first-child { margin-top: 0; }
+.cv-exp-role { font-weight: 700; color: #111827; }
+.cv-exp-co { color: #64748b; }
+.cv-exp-dates { font-size: 11px; color: #94a3b8; margin-bottom: 5px; }
+.cv-bullet { padding-left: 14px; position: relative; margin-bottom: 3px; }
+.cv-bullet::before { content: '▸'; position: absolute; left: 0; color: #4f46e5; }
+.cv-skills { display: flex; flex-wrap: wrap; gap: 5px; }
+.cv-skill { background: #ede9fe; color: #4338ca; border-radius: 5px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+.copy-block { background: #f8fafc; border-radius: 12px; overflow: hidden; border: 1px solid #e5e7eb; }
+.cb-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #e5e7eb; }
+.cb-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #64748b; }
+.copy-btn { font-size: 11px; font-weight: 700; color: #4f46e5; background: none; border: none; cursor: pointer; }
+.copy-btn.done { color: #10b981; }
+.cb-body { padding: 12px 14px; font-size: 12px; line-height: 1.7; color: #374151; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+.open-job-btn { display: block; text-align: center; padding: 12px; background: #0f1117; color: #fff; border-radius: 12px; font-weight: 700; font-size: 13px; cursor: pointer; border: none; width: 100%; }
+.notes-area { width: 100%; min-height: 70px; padding: 10px 12px; border-radius: 10px; border: 1.5px solid #e5e7eb; font-size: 12px; resize: vertical; outline: none; }
+.notes-area:focus { border-color: #4f46e5; }
+.save-btn { font-size: 11px; font-weight: 700; color: #4f46e5; background: none; border: none; cursor: pointer; margin-top: 6px; }
+.p-ts { font-size: 11px; color: #e2e8f0; text-align: right; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner { width: 15px; height: 15px; border: 2.5px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes flash { 0%,100%{background:transparent}50%{background:#ede9fe} }
+.flash { animation: flash .8s ease 2; }
+</style>
+</head>
+<body>
+
+<div id="s-login" class="screen active">
+  <div class="center-wrap">
+    <div class="auth-box">
+      <div class="auth-logo">
+        <div class="auth-logo-icon">🚀</div>
+        <h1>ApplyAI</h1>
+        <p>AI-powered job applications</p>
+      </div>
+      <div class="sim-note">🎭 Simulation — enter anything to log in</div>
+      <h2 style="font-size:17px;font-weight:700;margin-bottom:20px">Welcome back</h2>
+      <div class="field"><label>Email</label><input type="email" value="demo@applyai.app"></div>
+      <div class="field"><label>Password</label><input type="password" value="demo1234"></div>
+      <button class="btn-primary" id="login-btn" onclick="doLogin()">Log in</button>
+      <div class="auth-switch">Don't have an account? <span onclick="doLogin()">Sign up</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="s-setup" class="screen">
+  <div class="center-wrap">
+    <div style="width:100%;max-width:500px;padding:24px">
+      <div style="text-align:center;margin-bottom:24px">
+        <div style="width:52px;height:52px;background:#4f46e5;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:12px">🚀</div>
+        <h1 style="font-size:22px;font-weight:800">Upload your CV</h1>
+        <p style="color:#64748b;font-size:13px;margin-top:4px">We extract the text once — every job tailored from it automatically.</p>
+      </div>
+      <div class="setup-box">
+        <div class="sim-note">🎭 Simulation — click the drop zone to "upload"</div>
+        <div class="drop-zone" id="dz" onclick="simUpload()">
+          <div class="dz-icon" id="dz-icon">☁️</div>
+          <div class="dz-title" id="dz-title">Drop your CV here</div>
+          <div class="dz-sub" id="dz-sub">or click to browse — PDF only, max 10MB</div>
+        </div>
+        <div class="prog-bar" id="prog-bar"><div class="prog-fill" id="prog-fill"></div></div>
+        <div class="prog-label" id="prog-lbl"></div>
+        <button class="btn-primary" id="upload-btn" onclick="finishUpload()" disabled style="margin-top:14px">Upload & continue</button>
+        <p style="text-align:center;font-size:11px;color:#94a3b8;margin-top:10px">You can re-upload anytime from settings.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="s-dash" class="screen">
+  <nav>
+    <div class="nav-logo"><div class="nav-icon">🚀</div><span class="nav-name">ApplyAI</span></div>
+    <div class="nav-right">
+      <span class="nav-email">demo@applyai.app</span>
+      <button class="nav-out" onclick="goTo('login')">Sign out</button>
+    </div>
+  </nav>
+  <div class="main">
+    <div class="stats-grid" id="stats"></div>
+    <div class="process-bar">
+      <div class="process-label">Process a new job</div>
+      <div class="process-row">
+        <input class="process-input" id="url-input" placeholder="Paste a LinkedIn, Indeed, or any job URL…">
+        <button class="btn-analyse" id="analyse-btn" onclick="processJob()"><span id="btn-txt">Analyse job</span></button>
+      </div>
+      <div class="pipeline-steps" id="pipe-steps">
+        <div class="p-step" id="ps0"><div class="p-dot"></div>Fetching job posting…</div>
+        <div class="p-step" id="ps1"><div class="p-dot"></div>Extracting role details with AI…</div>
+        <div class="p-step" id="ps2"><div class="p-dot"></div>Scoring your fit against CV…</div>
+        <div class="p-step" id="ps3"><div class="p-dot"></div>Tailoring full CV (summary + bullets + skills)…</div>
+        <div class="p-step" id="ps4"><div class="p-dot"></div>Building .docx file…</div>
+        <div class="p-step" id="ps5"><div class="p-dot"></div>Writing cover letter…</div>
+        <div class="p-step" id="ps6"><div class="p-dot"></div>Saving to database…</div>
+      </div>
+      <div class="result-banner" id="result-banner"></div>
+    </div>
+    <div class="filters-row">
+      <input class="f-search" id="f-search" placeholder="Search…" oninput="renderTable()">
+      <div class="pills" id="pills"></div>
+      <div class="sort-grp" id="sorts"></div>
+    </div>
+    <div class="table-wrap">
+      <div class="t-head">
+        <div class="th">Score</div><div class="th">Company / Role</div><div class="th">Location</div>
+        <div class="th">Type</div><div class="th">Date</div><div class="th">Status</div>
+      </div>
+      <div id="t-body"></div>
+    </div>
+    <div class="t-footer" id="t-footer"></div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay" onclick="closePanel()"></div>
+<div class="panel" id="panel">
+  <div class="p-head"><div id="p-head-content"></div><button class="close-btn" onclick="closePanel()">×</button></div>
+  <div class="p-body" id="p-body"></div>
+</div>
+
+<script>
+const STATUS={new:{label:'New',c:'#6366f1',bg:'#ede9fe'},applied:{label:'Applied',c:'#0ea5e9',bg:'#e0f2fe'},interviewing:{label:'Interviewing',c:'#f59e0b',bg:'#fef3c7'},offer:{label:'Offer 🎉',c:'#10b981',bg:'#d1fae5'},rejected:{label:'Rejected',c:'#ef4444',bg:'#fee2e2'},skipped:{label:'Skipped',c:'#9ca3af',bg:'#f3f4f6'}}
+const sc=s=>s>=80?'#10b981':s>=65?'#f59e0b':s>=50?'#f97316':'#ef4444'
+const fmt=iso=>new Date(iso).toLocaleDateString('en-NL',{day:'numeric',month:'short'})
+const wtS=w=>w==='remote'?'background:#f0fdf4;color:#166534':w==='hybrid'?'background:#eff6ff;color:#1d4ed8':'background:#f3f4f6;color:#4b5563'
+
+let JOBS=[
+  {id:'j1',company:'Mollie',role:'Senior Product Manager',location:'Amsterdam, NL',work_type:'hybrid',fit_score:88,status:'interviewing',created_at:'2026-06-18T09:12:00Z',salary:'€80k–95k',gaps:['Payments domain'],strengths:['Product strategy','Stakeholder mgmt','Roadmapping'],fit_reason:'Strong product leadership background aligns well. Gaps in payments domain, but your B2B SaaS experience is directly transferable.',tailored_summary:'Experienced product leader with 6+ years driving B2B SaaS growth and cross-functional alignment. Skilled at translating complex requirements into clear product roadmaps. Proven track record scaling products from 0→1 and optimising funnels for retention.',experience:[{company:'Acme Corp',role:'Senior Product Manager',dates:'Jan 2022 – Present',bullets:['Led roadmap for core B2B platform, driving 35% reduction in churn through targeted feature delivery','Coordinated cross-functional squads of 12, shipping 3 major releases per quarter','Championed A/B testing frameworks and OKR reviews adopted company-wide']},{company:'StartupXYZ',role:'Product Manager',dates:'Mar 2019 – Dec 2021',bullets:['Owned payment reconciliation module, reducing manual errors by 60%','Ran 40+ customer interviews translating insights into prioritised backlog','Grew feature adoption from 20% to 78% through onboarding redesign']}],skills:['Product Strategy','Roadmapping','Agile / Scrum','Stakeholder Management','A/B Testing','OKRs','B2B SaaS','Data Analysis'],cover_letter_text:"Dear Mollie Hiring Team,\n\nMollie's ambition to democratise payments for European SMBs is exactly the kind of mission-driven challenge I've been looking for. Your recent expansion into embedded finance caught my attention — this is where great product thinking separates winners from followers.\n\nOver the past 6 years I've led product for B2B SaaS platforms, owning roadmaps from discovery to delivery. I redesigned our onboarding flow, cutting time-to-value by 40% and improving 90-day retention by 22%. I know how to work with engineering, data, and commercial teams to ship things that actually matter.\n\nI'd love to bring that rigour to Mollie's platform team. Available any time next week.\n\nBest,\nAlex",notes:''},
+  {id:'j2',company:'Booking.com',role:'Product Lead — Payments',location:'Amsterdam, NL',work_type:'hybrid',fit_score:81,status:'applied',created_at:'2026-06-17T14:30:00Z',salary:'€90k–110k',gaps:['Kotlin','Mobile-first'],strengths:['Scale experience','Data-driven','OKRs'],fit_reason:'Excellent match on leadership and data-driven approach. Mobile-first gap is manageable given your strong analytical background.',tailored_summary:'Product leader experienced in high-scale consumer platforms, OKR-driven delivery, and payment infrastructure. Led teams of 8+ across multiple product lines with strong data fluency.',experience:[{company:'Acme Corp',role:'Senior Product Manager',dates:'Jan 2022 – Present',bullets:['Scaled B2B checkout to 2M+ monthly transactions, 99.9% uptime SLA','Defined OKRs across 3 squads, improving team velocity by 30%','Worked with data science to surface actionable product analytics']},{company:'StartupXYZ',role:'Product Manager',dates:'Mar 2019 – Dec 2021',bullets:['Delivered payment reconciliation module handling €50M+ monthly volume','Pioneered feedback loops reducing support tickets by 45%']}],skills:['OKRs','Data Analysis','Payments','Product Leadership','Scale','Agile'],cover_letter_text:"Dear Booking.com Team,\n\nBooking.com processes millions of transactions daily and the payments infrastructure underpinning that scale is a genuinely hard problem — one I'd relish.\n\nMy background spans product leadership at scale with focus on conversion optimisation and checkout flows that directly impacted revenue. I've run OKR cycles across multi-team programmes and know how to align diverse stakeholders around a single north star.\n\nI'd love to explore how my experience maps to your payments team's roadmap.\n\nBest,\nAlex",notes:'Recruiter reached out first.'},
+  {id:'j3',company:'ZIVVER',role:'Product Manager',location:'Amsterdam, NL',work_type:'hybrid',fit_score:91,status:'offer',created_at:'2026-06-14T08:45:00Z',salary:'€75k–85k',gaps:[],strengths:['Security UX','Agile','Privacy-first'],fit_reason:'Near-perfect match. Security UX focus aligns with your background, hybrid Amsterdam setup fits preferences.',tailored_summary:'Privacy-focused PM with experience in secure communication workflows and enterprise UX. Strong agile practitioner with a track record shipping in regulated environments.',experience:[{company:'Acme Corp',role:'Senior Product Manager',dates:'Jan 2022 – Present',bullets:['Built GDPR-compliant privacy features, zero compliance incidents','Designed enterprise admin UX, reducing onboarding from 3 weeks to 4 days','Maintained trust across legal, security, and product on all major releases']},{company:'StartupXYZ',role:'Product Manager',dates:'Mar 2019 – Dec 2021',bullets:['Shipped end-to-end encrypted messaging for 50k B2B users','Led agile ceremonies across 2 squads, consistently meeting sprint goals']}],skills:['Security UX','GDPR / Privacy','Agile','Enterprise B2B','Regulated Environments','Product Discovery'],cover_letter_text:"Dear ZIVVER Team,\n\nZIVVER is solving a genuinely important problem — making secure communication feel effortless for people who aren't security experts. That UX challenge is where I've spent much of my career.\n\nI've built products in regulated industries where trust, compliance, and simplicity have to coexist. I know how to design for anxious users and sceptical IT admins simultaneously.\n\nOffer received — thank you. Reviewing terms and will respond by Friday.\n\nAlex",notes:'Offer received 20 Jun. Deadline 27 Jun.'},
+  {id:'j4',company:'TomTom',role:'Senior PM — Maps',location:'Amsterdam, NL',work_type:'hybrid',fit_score:61,status:'rejected',created_at:'2026-06-12T16:20:00Z',salary:'€70k–80k',gaps:['Geo/mapping','C++'],strengths:['Consumer products'],fit_reason:'Mapping domain knowledge gap proved hard to bridge — domain expertise was core to the role.',tailored_summary:null,experience:null,skills:null,cover_letter_text:null,notes:''},
+  {id:'j5',company:'WeTransfer',role:'Product Manager',location:'Amsterdam, NL',work_type:'remote',fit_score:52,status:'skipped',created_at:'2026-06-11T10:00:00Z',salary:null,gaps:['Design tools','Creative industry'],strengths:[],fit_reason:'Score 52 — below threshold. Creative domain too far from background.',tailored_summary:null,experience:null,skills:null,cover_letter_text:null,notes:''},
+  {id:'j6',company:'Catawiki',role:'Senior Product Manager',location:'Amsterdam, NL',work_type:'hybrid',fit_score:79,status:'new',created_at:'2026-06-20T07:30:00Z',salary:'€80k–90k',gaps:['Marketplace','Auction mechanics'],strengths:['Growth','A/B testing','Pricing'],fit_reason:'Good match on growth and experimentation. Pricing background is a real differentiator.',tailored_summary:'Growth-oriented PM with strong A/B testing culture and pricing experimentation background. 5 years driving conversion in e-commerce adjacent products.',experience:[{company:'Acme Corp',role:'Senior Product Manager',dates:'Jan 2022 – Present',bullets:['Ran 40+ A/B tests across pricing and checkout, lifting conversion by 18%','Built seller-facing tools increasing listing quality score by 33%','Designed promotional mechanics driving 25% GMV uplift in Q3']},{company:'StartupXYZ',role:'Product Manager',dates:'Mar 2019 – Dec 2021',bullets:['Launched dynamic pricing engine, increasing average order value by 12%','Designed gamification loops improving 30-day retention by 22%']}],skills:['Growth','A/B Testing','Pricing Strategy','Conversion Optimisation','E-commerce','Agile'],cover_letter_text:"Dear Catawiki Team,\n\nCatawiki's model — expert curation meets global bidding — sits at a fascinating intersection of trust, excitement, and discovery.\n\nI bring strong growth and experimentation skills: 40+ A/B tests across checkout and browse flows, with pricing experimentation experience that maps well to auction dynamics. I learn domain context fast.\n\nHappy to chat about how my background fits your roadmap.\n\nAlex",notes:''},
+]
+
+const FAKE_NEW=[
+  {company:'NN Group',role:'Digital Product Owner',location:'Amsterdam, NL',work_type:'hybrid',fit_score:72,salary:'€70k–85k',gaps:['Insurance domain','SAFe'],strengths:['Agile','Enterprise stakeholders'],fit_reason:'Solid alignment on agile delivery. Insurance domain learnable.',tailored_summary:'Product owner with 5+ years in enterprise digital transformation and agile delivery.',experience:[{company:'Acme Corp',role:'Senior Product Manager',dates:'Jan 2022 – Present',bullets:['Led digital transformation of enterprise portal serving 300k users','Facilitated PI planning across 4 agile teams','Reduced time-to-resolution for enterprise support by 40%']},{company:'StartupXYZ',role:'Product Manager',dates:'Mar 2019 – Dec 2021',bullets:['Shipped 3 major releases on time and within budget','Managed stakeholders across legal, ops, and tech']}],skills:['Agile','Enterprise B2B','Stakeholder Mgmt','Digital Transformation','OKRs'],cover_letter_text:"Dear NN Group,\n\nNN Group's push to modernise its digital customer experience is a fascinating product challenge.\n\nI bring enterprise product experience with a strength in complex stakeholder alignment and iterative delivery in regulated contexts.\n\nLooking forward to discussing how I can contribute.\n\nAlex"},
+  {company:'Takeaway.com',role:'Product Manager — Growth',location:'Amsterdam, NL',work_type:'hybrid',fit_score:84,salary:'€75k–95k',gaps:['Food delivery'],strengths:['Growth loops','Experimentation','Funnels'],fit_reason:'Strong match on growth and experimentation. Consumer funnel experience transfers directly.',tailored_summary:'Growth PM with high-velocity experimentation track record across acquisition and activation funnels.',experience:[{company:'Acme Corp',role:'Senior Product Manager',dates:'Jan 2022 – Present',bullets:['Built growth experimentation programme: 50+ tests, +18% activation rate','Redesigned referral loop increasing organic acquisition from 12% to 31%','Built real-time funnel monitoring dashboard with data science']},{company:'StartupXYZ',role:'Product Manager',dates:'Mar 2019 – Dec 2021',bullets:['Full-funnel optimisation lifting CVR by 22%','Introduced cohort analysis identifying key activation moments']}],skills:['Growth','A/B Testing','Experimentation','Funnel Optimisation','Data Analysis','Activation'],cover_letter_text:"Dear Takeaway.com Team,\n\nTakeaway operates at a scale where a 1% checkout improvement is worth millions — exactly where I thrive.\n\nI've run 50+ A/B tests across acquisition and activation, and built growth loops that compounded over time.\n\nExcited about bringing that energy to your growth team.\n\nAlex"},
+  {company:'Sketch',role:'Senior PM',location:'Remote (EU)',work_type:'remote',fit_score:54,salary:'€65k–80k',gaps:['Design tool domain','Figma competitor context'],strengths:['B2B SaaS'],fit_reason:'Score 54 — below threshold. Design tool domain gap too significant.',tailored_summary:null,experience:null,skills:null,cover_letter_text:null},
+]
+let fakeIdx=0,filterStatus='all',sortBy='date',selectedId=null,openDD=null,cvDone=false
+
+function goTo(s){document.querySelectorAll('.screen').forEach(el=>el.classList.remove('active'));document.getElementById('s-'+s).classList.add('active');if(s==='dash'){renderStats();renderTable()}}
+function doLogin(){const btn=document.getElementById('login-btn');btn.disabled=true;btn.textContent='Signing in…';setTimeout(()=>goTo('setup'),1100)}
+function simUpload(){if(cvDone)return;document.getElementById('dz').classList.add('has-file');document.getElementById('dz-icon').textContent='📄';document.getElementById('dz-title').textContent='CV_Alex_2026.pdf';document.getElementById('dz-sub').textContent='142 KB — ready to upload';document.getElementById('upload-btn').disabled=false;cvDone=true}
+function finishUpload(){const btn=document.getElementById('upload-btn');btn.disabled=true;btn.textContent='Extracting CV text…';document.getElementById('prog-bar').style.display='block';let w=0;const iv=setInterval(()=>{w+=Math.random()*20;if(w>100)w=100;document.getElementById('prog-fill').style.width=w+'%';document.getElementById('prog-lbl').textContent=w<40?'Parsing PDF…':w<80?'Extracting text…':'Saving to database…';if(w>=100){clearInterval(iv);document.getElementById('prog-lbl').textContent='✓ 3,842 characters extracted';setTimeout(()=>goTo('dash'),900)}},110)}
+
+function renderStats(){const ns=JOBS.filter(j=>j.status!=='skipped');const ap=JOBS.filter(j=>j.status==='applied').length;const iv=JOBS.filter(j=>j.status==='interviewing').length;const of=JOBS.filter(j=>j.status==='offer').length;const avg=ns.length?(ns.reduce((s,j)=>s+(j.fit_score||0),0)/ns.length).toFixed(1):'—';const rate=ap>0?Math.round((iv+of)/ap*100):null;document.getElementById('stats').innerHTML=[{l:'Processed',v:JOBS.length,s:JOBS.filter(j=>j.status==='skipped').length+' skipped',a:'#6366f1'},{l:'Applied',v:ap,s:iv+' interviewing',a:'#0ea5e9'},{l:'Avg Fit Score',v:avg,s:'out of 100',a:'#f59e0b'},{l:'Interview Rate',v:rate!==null?rate+'%':'—',s:of>0?of+' offer':'no offers yet',a:'#10b981'}].map(x=>`<div class="stat-card" style="border-left-color:${x.a}"><div class="stat-label">${x.l}</div><div class="stat-value">${x.v}</div><div class="stat-sub">${x.s}</div></div>`).join('')}
+
+function processJob(){const url=document.getElementById('url-input').value.trim();if(!url){document.getElementById('url-input').style.borderColor='#ef4444';setTimeout(()=>document.getElementById('url-input').style.borderColor='',1500);return}const btn=document.getElementById('analyse-btn');const btxt=document.getElementById('btn-txt');document.getElementById('pipe-steps').style.display='block';document.getElementById('result-banner').style.display='none';btn.disabled=true;btxt.innerHTML='<div class="spinner"></div>Processing…';for(let i=0;i<7;i++){const s=document.getElementById('ps'+i);s.className='p-step';s.querySelector('.p-dot').className='p-dot'}
+const job=FAKE_NEW[fakeIdx%FAKE_NEW.length];fakeIdx++
+const delays=[0,900,1800,2700,3500,4300,5000];const dones=[700,1600,2500,3300,4100,4900,5700]
+delays.forEach((d,i)=>setTimeout(()=>{const s=document.getElementById('ps'+i);s.className='p-step active';s.querySelector('.p-dot').className='p-dot spin'},d))
+dones.forEach((d,i)=>setTimeout(()=>{const s=document.getElementById('ps'+i);s.className='p-step done';s.querySelector('.p-dot').className='p-dot'},d))
+setTimeout(()=>{btn.disabled=false;btxt.textContent='Analyse job';document.getElementById('url-input').value='';const skipped=job.fit_score<60;const newJob={...job,id:'j'+Date.now(),status:skipped?'skipped':'new',created_at:new Date().toISOString(),notes:''};JOBS.unshift(newJob);const banner=document.getElementById('result-banner');if(!skipped){banner.className='result-banner ok';banner.textContent=`✓ ${job.role} at ${job.company} — score ${job.fit_score}/100. Full CV (.docx) and cover letter ready.`}else{banner.className='result-banner skip';banner.textContent=`Fit score ${job.fit_score}/100 — below threshold (60). Logged as skipped, no documents generated.`}banner.style.display='block';renderStats();renderTable();if(!skipped)setTimeout(()=>{const r=document.querySelector('[data-id="'+newJob.id+'"]');if(r)r.classList.add('flash')},100)},6000)}
+
+function renderTable(){document.getElementById('pills').innerHTML=['all',...Object.keys(STATUS)].map(s=>{const m=STATUS[s];const a=filterStatus===s;return`<button class="pill${a?' active':''}" style="--c:${m?.c||'#6366f1'};--bg:${m?.bg||'#ede9fe'}" onclick="setF('${s}')">${s==='all'?'All':m.label}</button>`}).join('');document.getElementById('sorts').innerHTML=['date','score','company'].map(s=>`<button class="sort-btn${sortBy===s?' active':''}" onclick="setS('${s}')">Sort: ${s}</button>`).join('');const q=(document.getElementById('f-search')?.value||'').toLowerCase();const rows=JOBS.filter(j=>filterStatus==='all'||j.status===filterStatus).filter(j=>!q||(j.company+j.role+j.location).toLowerCase().includes(q)).sort((a,b)=>sortBy==='score'?(b.fit_score||0)-(a.fit_score||0):sortBy==='company'?(a.company||'').localeCompare(b.company||''):new Date(b.created_at)-new Date(a.created_at));const body=document.getElementById('t-body');if(!rows.length){body.innerHTML=`<div class="empty">${JOBS.length===0?'No applications yet. Paste a job URL above to get started.':'No applications match your filters.'}</div>`;document.getElementById('t-footer').textContent='';return}body.innerHTML=rows.map(j=>{const sm=STATUS[j.status]||STATUS.new;return`<div class="t-row${selectedId===j.id?' sel':''}" data-id="${j.id}" onclick="selJob('${j.id}')"><div><div class="score-badge" style="background:${sc(j.fit_score||0)}22;color:${sc(j.fit_score||0)}">${j.fit_score||'—'}</div></div><div><div class="co-name">${j.company}</div><div class="co-role">${j.role}</div></div><div class="loc">${j.location}</div><div><span class="wbadge" style="${wtS(j.work_type)}">${j.work_type||''}</span></div><div class="date">${fmt(j.created_at)}</div><div class="sw" onclick="event.stopPropagation()" id="sw-${j.id}"><button class="spill" style="background:${sm.bg};color:${sm.c}" onclick="toggleDD('${j.id}')">${sm.label} ▾</button><div class="sdd" id="dd-${j.id}">${Object.entries(STATUS).map(([k,v])=>`<button class="sopt" style="color:${v.c};background:${j.status===k?v.bg:'transparent'}" onclick="chSt('${j.id}','${k}')">${v.label}</button>`).join('')}</div></div></div>`}).join('');document.getElementById('t-footer').textContent=`${rows.length} of ${JOBS.length} applications · Simulation`}
+function setF(s){filterStatus=s;renderTable()}
+function setS(s){sortBy=s;renderTable()}
+function toggleDD(id){if(openDD&&openDD!==id)document.getElementById('dd-'+openDD)?.classList.remove('open');openDD=id;document.getElementById('dd-'+id)?.classList.toggle('open')}
+document.addEventListener('click',e=>{if(openDD&&!e.target.closest('.sw')){document.getElementById('dd-'+openDD)?.classList.remove('open');openDD=null}})
+function chSt(id,status){JOBS=JOBS.map(j=>j.id===id?{...j,status}:j);if(openDD){document.getElementById('dd-'+openDD)?.classList.remove('open');openDD=null}if(selectedId===id)renderPanel(JOBS.find(j=>j.id===id));renderStats();renderTable()}
+
+function selJob(id){selectedId=id;renderPanel(JOBS.find(j=>j.id===id));document.getElementById('overlay').classList.add('open');document.getElementById('panel').classList.add('open');renderTable()}
+function closePanel(){selectedId=null;document.getElementById('overlay').classList.remove('open');document.getElementById('panel').classList.remove('open');renderTable()}
+
+function renderPanel(job){
+  if(!job)return
+  const sm=STATUS[job.status]||STATUS.new;const color=sc(job.fit_score||0)
+  document.getElementById('p-head-content').innerHTML=`<div class="p-co">${job.company}</div><div class="p-role">${job.role}</div><div class="p-loc">${job.location} · ${job.work_type}</div>`
+  const strengths=job.strengths||[];const gaps=job.gaps||[];const hasDoc=!!job.tailored_summary
+  let cvHTML=''
+  if(hasDoc&&job.experience){cvHTML=`<div class="cv-sec-title">Professional Summary</div><p style="font-size:12px;line-height:1.75;color:#374151;margin-bottom:10px">${job.tailored_summary}</p><div class="cv-sec-title">Key Skills</div><div class="cv-skills">${(job.skills||[]).map(s=>`<span class="cv-skill">${s}</span>`).join('')}</div><div class="cv-sec-title">Experience</div>${job.experience.map(exp=>`<div style="margin-bottom:14px"><div><span class="cv-exp-role">${exp.role}</span> <span class="cv-exp-co">· ${exp.company}</span></div><div class="cv-exp-dates">${exp.dates}</div>${exp.bullets.map(b=>`<div class="cv-bullet">${b}</div>`).join('')}</div>`).join('')}`}
+  const clText=job.cover_letter_text||''
+  document.getElementById('p-body').innerHTML=`
+    <div style="display:flex;align-items:center;gap:14px">
+      <div class="score-badge" style="width:48px;height:48px;font-size:16px;background:${color}22;color:${color}">${job.fit_score||'—'}</div>
+      <div><div style="font-weight:700;font-size:13px">${job.salary||'Salary not listed'}</div></div>
+      <div style="margin-left:auto"><span class="spill" style="background:${sm.bg};color:${sm.c}">${sm.label}</span></div>
+    </div>
+    ${job.fit_reason?`<p style="font-size:12px;color:#64748b;background:#f8fafc;padding:12px 14px;border-radius:10px;line-height:1.7">${job.fit_reason}</p>`:''}
+    ${strengths.length?`<div><div class="sec-lbl" style="color:#10b981">Your strengths</div><div class="tags">${strengths.map(s=>`<span class="tag g">${s}</span>`).join('')}</div></div>`:''}
+    ${gaps.length?`<div><div class="sec-lbl" style="color:#ef4444">Gaps to address</div><div class="tags">${gaps.map(g=>`<span class="tag r">${g}</span>`).join('')}</div></div>`:''}
+    ${hasDoc?`
+      <div class="dl-row">
+        <button class="dl-btn-main" onclick="simDl('cv','${job.id}')">⬇ Download Tailored CV (.docx)</button>
+        ${clText?`<button class="dl-btn-sec" onclick="simDl('cover','${job.id}')">⬇ Cover Letter</button>`:''}
+      </div>
+      <div class="cv-preview">
+        <div class="cv-preview-head">
+          <span class="cv-preview-lbl">Full tailored CV preview</span>
+          <button class="cv-toggle" id="cv-tog-${job.id}" onclick="toggleCv('${job.id}')">Show ▾</button>
+        </div>
+        <div class="cv-preview-body" id="cv-prev-${job.id}">${cvHTML}</div>
+      </div>
+      ${clText?`<div class="copy-block"><div class="cb-head"><span class="cb-lbl">Cover letter</span><button class="copy-btn" id="cp-${job.id}" onclick="doCopy(this,\`${clText.replace(/`/g,"'").replace(/\n/g,'\\n')}\`)">Copy</button></div><div class="cb-body">${clText}</div></div>`:''}
+    `:`<div style="background:#f8fafc;border-radius:10px;padding:16px;text-align:center;color:#94a3b8;font-size:13px">No documents — fit score below threshold.</div>`}
+    <button class="open-job-btn" onclick="alert('In the real app this opens the job posting in a new tab.')">→ Open job posting & apply</button>
+    <div><div class="sec-lbl" style="color:#94a3b8">Notes</div><textarea class="notes-area" id="notes-${job.id}" placeholder="Add notes…">${job.notes||''}</textarea><button class="save-btn" onclick="saveNotes('${job.id}',this)">Save notes</button></div>
+    <div class="p-ts">Added ${fmt(job.created_at)}</div>`
+}
+function toggleCv(id){const b=document.getElementById('cv-prev-'+id);const t=document.getElementById('cv-tog-'+id);const o=b.classList.toggle('open');t.textContent=o?'Hide ▴':'Show ▾'}
+function simDl(type,id){const j=JOBS.find(x=>x.id===id);if(!j)return;const n=type==='cv'?`CV_Tailored_${j.company.replace(/\s+/g,'-')}.docx`:`CoverLetter_${j.company.replace(/\s+/g,'-')}.txt`;alert(`🎭 Simulation: "${n}" would download from Supabase Storage in the real app.`)}
+function doCopy(btn,text){navigator.clipboard.writeText(text).catch(()=>{});btn.textContent='✓ Copied!';btn.classList.add('done');setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('done')},2000)}
+function saveNotes(id,btn){const notes=document.getElementById('notes-'+id)?.value||'';JOBS=JOBS.map(j=>j.id===id?{...j,notes}:j);btn.textContent='Saved ✓';setTimeout(()=>btn.textContent='Save notes',1500)}
+</script>
+</body>
+</html>
