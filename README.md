@@ -6,6 +6,8 @@
 ![Stack](https://img.shields.io/badge/stack-Next.js%20%7C%20Supabase%20%7C%20Claude%20API-blue)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
+> **New to coding?** Follow the [plain-English setup guide](./SETUP.md) — no experience needed.
+
 ---
 
 ## What it does
