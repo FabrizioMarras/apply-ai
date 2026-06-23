@@ -78,7 +78,6 @@ CREATE INDEX idx_job_score   ON job_applications (fit_score DESC);
 CREATE INDEX idx_job_created ON job_applications (created_at DESC);
 
 -- 5. ROW LEVEL SECURITY
--- Each user can only see and edit their own data
 ALTER TABLE user_profiles    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE job_applications ENABLE ROW LEVEL SECURITY;
 
@@ -89,6 +88,9 @@ CREATE POLICY "jobs: own rows only" ON job_applications
   FOR ALL USING (auth.uid() = user_id);
 
 -- 6. STATS VIEW (per user)
+-- NOTE: This view is no longer queried by the frontend — stats are now
+-- computed client-side from the job_applications array for real-time
+-- reactivity. Safe to drop with: DROP VIEW IF EXISTS my_job_stats;
 CREATE VIEW my_job_stats AS
 SELECT
   auth.uid()                                                        AS user_id,
@@ -110,7 +112,7 @@ GROUP BY auth.uid();
 -- 7. STORAGE BUCKETS
 -- Run these in Supabase Dashboard → Storage → New Bucket:
 --   Name: "cv-uploads"       → Public: OFF (private)
---   Name: "job-documents"    → Public: OFF (private)
+--   Name: "job-documents"    → Public: ON  (so generated files are downloadable)
 -- Then add policies: authenticated users can read/write their own files
 -- Storage → Policies → New policy for each bucket:
 --   INSERT: (auth.uid()::text = (storage.foldername(name))[1])

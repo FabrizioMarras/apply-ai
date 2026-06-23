@@ -19,11 +19,11 @@ export interface JobApplication {
   strengths: string[]
   gaps: string[]
   recommendation: Recommendation | null
-  cv_file_url: string | null          // downloadable .docx tailored CV
+  cv_file_url: string | null
   cover_letter_url: string | null
   cover_letter_text: string | null
   tailored_summary: string | null
-  tailored_bullets: Array<{ section: string; bullets: string[] }> | null
+  tailored_bullets: Array<{ company: string; role: string; dates: string; bullets: string[] }> | null
   tailored_skills: string[] | null
   status: JobStatus
   notes: string | null

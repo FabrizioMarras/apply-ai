@@ -1,10 +1,36 @@
 'use client'
-import { useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useRef } from 'react'
 import { JobApplication, JobStats, JobStatus, STATUS_META, scoreColor } from '@/lib/types'
+import { useToast } from '@/components/Toast'
+
+const PAGE_SIZE = 20
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+
+function computeStats(jobs: JobApplication[]): JobStats {
+  const withScore = jobs.filter(j => j.status !== 'skipped' && j.fit_score !== null)
+  const avgScore  = withScore.length > 0
+    ? Math.round(withScore.reduce((s, j) => s + (j.fit_score ?? 0), 0) / withScore.length * 10) / 10
+    : null
+  const applied      = jobs.filter(j => j.status === 'applied').length
+  const interviewing = jobs.filter(j => j.status === 'interviewing').length
+  return {
+    total:              jobs.length,
+    applied,
+    interviewing,
+    offers:             jobs.filter(j => j.status === 'offer').length,
+    rejected:           jobs.filter(j => j.status === 'rejected').length,
+    skipped:            jobs.filter(j => j.status === 'skipped').length,
+    avg_fit_score:      avgScore,
+    interview_rate_pct: applied > 0 ? Math.round(100 * interviewing / applied * 10) / 10 : null,
+  }
+}
 
 // ── Stat Card ─────────────────────────────────────────────────────────────────
-function StatCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent: string }) {
+
+function StatCard({ label, value, sub, accent }: {
+  label: string; value: string | number; sub?: string; accent: string
+}) {
   return (
     <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100" style={{ borderLeft: `4px solid ${accent}` }}>
       <p className="text-xs font-bold uppercase tracking-widest text-slate mb-1">{label}</p>
@@ -15,6 +41,7 @@ function StatCard({ label, value, sub, accent }: { label: string; value: string 
 }
 
 // ── Score Badge ───────────────────────────────────────────────────────────────
+
 function ScoreBadge({ score }: { score: number | null }) {
   if (score === null) return <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 text-xs">—</div>
   const c = scoreColor(score)
@@ -25,19 +52,32 @@ function ScoreBadge({ score }: { score: number | null }) {
 }
 
 // ── Status Pill ───────────────────────────────────────────────────────────────
+
 function StatusPill({ status, onChange }: { status: JobStatus; onChange: (s: JobStatus) => void }) {
   const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
   const m = STATUS_META[status]
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
   return (
-    <div className="relative">
-      <button onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
+    <div ref={ref} className="relative">
+      <button
+        onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
         className="rounded-full px-3 py-1 text-xs font-bold cursor-pointer border-0"
-        style={{ background: m.bg, color: m.color }}>
+        style={{ background: m.bg, color: m.color }}
+      >
         {m.label} ▾
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 bg-white rounded-xl shadow-xl border border-gray-100 p-1.5 min-w-40"
-          onClick={e => e.stopPropagation()}>
+        <div className="absolute top-full left-0 mt-1 z-50 bg-white rounded-xl shadow-xl border border-gray-100 p-1.5 min-w-40">
           {(Object.keys(STATUS_META) as JobStatus[]).map(k => (
             <button key={k} onClick={() => { onChange(k); setOpen(false) }}
               className="block w-full text-left px-3 py-2 rounded-lg text-xs font-bold hover:opacity-80"
@@ -51,24 +91,134 @@ function StatusPill({ status, onChange }: { status: JobStatus; onChange: (s: Job
   )
 }
 
+// ── CV Section ────────────────────────────────────────────────────────────────
+
+function CvSection({ hasCv, onUploaded }: { hasCv: boolean; onUploaded: () => void }) {
+  const { toast } = useToast()
+  const [file, setFile]         = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [replacing, setReplacing] = useState(!hasCv)
+
+  async function upload() {
+    if (!file) return
+    setUploading(true)
+    const form = new FormData()
+    form.append('cv', file)
+    try {
+      const res  = await fetch('/api/upload-cv', { method: 'POST', body: form })
+      const data = await res.json()
+      if (!res.ok) {
+        toast('error', data.error ?? 'Upload failed')
+      } else {
+        toast('success', `CV uploaded — ${data.charCount.toLocaleString()} characters extracted`)
+        setFile(null)
+        setReplacing(false)
+        onUploaded()
+      }
+    } catch {
+      toast('error', 'Upload failed. Please try again.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  if (hasCv && !replacing) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-3 mb-6 flex items-center gap-3">
+        <span className="text-emerge font-bold text-sm">✓ CV active</span>
+        <span className="text-xs text-slate flex-1">Your CV is ready for job analysis.</span>
+        <button
+          onClick={() => setReplacing(true)}
+          className="text-xs font-semibold text-brand hover:underline"
+        >
+          Replace CV
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs font-bold uppercase tracking-widest text-slate">
+          {hasCv ? 'Replace your CV' : 'Upload your CV to get started'}
+        </p>
+        {hasCv && (
+          <button onClick={() => { setReplacing(false); setFile(null) }}
+            className="text-xs text-slate hover:text-ink">
+            Cancel
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-3">
+        <label className={`flex-1 flex items-center gap-3 border-2 border-dashed rounded-xl px-4 py-3 cursor-pointer transition-all
+          ${file ? 'border-emerge bg-green-50' : 'border-gray-200 hover:border-brand'}`}>
+          <input type="file" accept=".pdf" className="hidden" onChange={e => setFile(e.target.files?.[0] ?? null)} />
+          <span className="text-lg">{file ? '📄' : '☁️'}</span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-ink truncate">{file ? file.name : 'Choose PDF'}</p>
+            <p className="text-xs text-slate">{file ? `${(file.size / 1024).toFixed(0)} KB` : 'PDF only, max 10 MB'}</p>
+          </div>
+        </label>
+        <button
+          onClick={upload}
+          disabled={!file || uploading}
+          className="px-4 py-3 bg-brand text-white rounded-xl font-semibold text-sm disabled:opacity-40 whitespace-nowrap"
+        >
+          {uploading ? 'Uploading…' : 'Upload'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Detail Panel ──────────────────────────────────────────────────────────────
-function DetailPanel({ job, onClose, onStatusChange }: {
-  job: JobApplication; onClose: () => void; onStatusChange: (id: string, s: JobStatus) => void
+
+function DetailPanel({ job, onClose, onStatusChange, onDelete }: {
+  job: JobApplication
+  onClose: () => void
+  onStatusChange: (id: string, s: JobStatus) => void
+  onDelete: (id: string) => void
 }) {
-  const [copied, setCopied] = useState<'cv' | 'letter' | null>(null)
-  const [notes, setNotes]   = useState(job.notes ?? '')
-  const [saving, setSaving] = useState(false)
+  const { toast }               = useToast()
+  const [copied, setCopied]     = useState<'summary' | 'letter' | null>(null)
+  const [notes, setNotes]       = useState(job.notes ?? '')
+  const [saving, setSaving]     = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   async function saveNotes() {
     setSaving(true)
-    await fetch('/api/update-status', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: job.id, notes }) })
+    await fetch('/api/update-status', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: job.id, notes }),
+    })
     setSaving(false)
+    toast('success', 'Notes saved')
   }
 
-  function copy(text: string, which: 'cv' | 'letter') {
+  async function handleDelete() {
+    if (!confirm('Delete this application? This cannot be undone.')) return
+    setDeleting(true)
+    const res = await fetch('/api/delete-job', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: job.id }),
+    })
+    if (res.ok) {
+      onDelete(job.id)
+      onClose()
+      toast('success', 'Application deleted')
+    } else {
+      toast('error', 'Delete failed. Please try again.')
+      setDeleting(false)
+    }
+  }
+
+  function copy(text: string, which: 'summary' | 'letter') {
     navigator.clipboard.writeText(text)
-    setCopied(which); setTimeout(() => setCopied(null), 2000)
+    setCopied(which)
+    setTimeout(() => setCopied(null), 2000)
   }
 
   const strengths = Array.isArray(job.strengths) ? job.strengths : []
@@ -78,18 +228,16 @@ function DetailPanel({ job, onClose, onStatusChange }: {
     <>
       <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
       <div className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-white shadow-2xl z-50 flex flex-col overflow-y-auto">
-        {/* Header */}
         <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-start sticky top-0 bg-white">
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-slate mb-1">{job.company}</p>
             <h2 className="text-xl font-bold text-ink">{job.role}</h2>
             <p className="text-sm text-slate mt-0.5">{job.location} · {job.work_type}</p>
           </div>
-          <button onClick={onClose} className="text-slate hover:text-ink text-2xl leading-none font-light">×</button>
+          <button onClick={onClose} className="text-slate hover:text-ink text-2xl leading-none font-light ml-4">×</button>
         </div>
 
         <div className="px-6 py-5 flex flex-col gap-5 flex-1">
-          {/* Score + status row */}
           <div className="flex items-center gap-4">
             <ScoreBadge score={job.fit_score} />
             <div>
@@ -101,12 +249,10 @@ function DetailPanel({ job, onClose, onStatusChange }: {
             </div>
           </div>
 
-          {/* Fit reason */}
           {job.fit_reason && (
             <p className="text-sm text-slate bg-gray-50 rounded-xl p-4 leading-relaxed">{job.fit_reason}</p>
           )}
 
-          {/* Strengths */}
           {strengths.length > 0 && (
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-emerge mb-2">Your strengths</p>
@@ -116,7 +262,6 @@ function DetailPanel({ job, onClose, onStatusChange }: {
             </div>
           )}
 
-          {/* Gaps */}
           {gaps.length > 0 && (
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-danger mb-2">Gaps to address</p>
@@ -126,7 +271,6 @@ function DetailPanel({ job, onClose, onStatusChange }: {
             </div>
           )}
 
-          {/* Download buttons — primary actions */}
           <div className="flex gap-2">
             {job.cv_file_url ? (
               <a href={job.cv_file_url} target="_blank" rel="noreferrer"
@@ -141,26 +285,24 @@ function DetailPanel({ job, onClose, onStatusChange }: {
             {job.cover_letter_url && (
               <a href={job.cover_letter_url} target="_blank" rel="noreferrer"
                 className="px-4 py-2.5 bg-gray-100 text-slate rounded-xl font-semibold text-xs hover:bg-gray-200">
-                ⬇ Cover Letter
+                ⬇ Cover Letter (.docx)
               </a>
             )}
           </div>
 
-          {/* Tailored summary preview */}
           {job.tailored_summary && (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-bold uppercase tracking-widest text-slate">Summary preview</p>
-                <button onClick={() => copy(job.tailored_summary!, 'cv')}
+                <button onClick={() => copy(job.tailored_summary!, 'summary')}
                   className="text-xs text-brand font-semibold hover:underline">
-                  {copied === 'cv' ? '✓ Copied!' : 'Copy'}
+                  {copied === 'summary' ? '✓ Copied!' : 'Copy'}
                 </button>
               </div>
               <p className="text-sm text-ink bg-gray-50 rounded-xl p-4 leading-relaxed">{job.tailored_summary}</p>
             </div>
           )}
 
-          {/* Cover letter preview */}
           {job.cover_letter_text && (
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -174,13 +316,11 @@ function DetailPanel({ job, onClose, onStatusChange }: {
             </div>
           )}
 
-          {/* Open job posting */}
           <a href={job.job_url} target="_blank" rel="noreferrer"
             className="block text-center py-3 bg-ink text-white rounded-xl font-bold text-sm hover:bg-gray-800">
             → Open job posting & apply
           </a>
 
-          {/* Notes */}
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-slate mb-2">Notes</p>
             <textarea value={notes} onChange={e => setNotes(e.target.value)}
@@ -192,9 +332,18 @@ function DetailPanel({ job, onClose, onStatusChange }: {
             </button>
           </div>
 
-          <p className="text-xs text-gray-300 text-right">
-            Added {new Date(job.created_at).toLocaleDateString('en-NL', { day: 'numeric', month: 'short', year: 'numeric' })}
-          </p>
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+            <p className="text-xs text-gray-300">
+              Added {new Date(job.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+            </p>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="text-xs font-semibold text-danger hover:underline disabled:opacity-50"
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
         </div>
       </div>
     </>
@@ -202,29 +351,41 @@ function DetailPanel({ job, onClose, onStatusChange }: {
 }
 
 // ── Process Job Bar ───────────────────────────────────────────────────────────
-function ProcessJobBar({ hasCv, onProcessed }: { hasCv: boolean; onProcessed: () => void }) {
+
+function ProcessJobBar({ hasCv, onJobAdded }: {
+  hasCv: boolean
+  onJobAdded: (job: JobApplication) => void
+}) {
+  const { toast } = useToast()
   const [url, setUrl]         = useState('')
   const [loading, setLoading] = useState(false)
-  const [result, setResult]   = useState<{ type: 'success' | 'skip' | 'error'; msg: string } | null>(null)
 
   async function process() {
-    if (!url.trim()) return
-    setLoading(true); setResult(null)
-    const res = await fetch('/api/process-job', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobUrl: url.trim() }),
-    })
-    const data = await res.json()
-    setLoading(false)
-    if (!res.ok) {
-      setResult({ type: 'error', msg: data.error ?? 'Something went wrong' })
-    } else if (data.skipped) {
-      setResult({ type: 'skip', msg: `Fit score ${data.score}/100 — below threshold. Logged as skipped.` })
-      onProcessed()
-    } else {
-      setResult({ type: 'success', msg: `✓ ${data.role} at ${data.company} — score ${data.score}/100. CV and cover letter ready.` })
-      setUrl('')
-      onProcessed()
+    const trimmed = url.trim()
+    if (!trimmed) return
+    setLoading(true)
+    try {
+      const res  = await fetch('/api/process-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobUrl: trimmed }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast('error', data.error ?? 'Something went wrong')
+      } else if (data.skipped) {
+        toast('info', `Fit score ${data.score}/100 — below threshold. Logged as skipped.`)
+        if (data.job) onJobAdded(data.job as JobApplication)
+        setUrl('')
+      } else {
+        toast('success', `${data.role} at ${data.company} — score ${data.score}/100. CV & cover letter ready.`)
+        if (data.job) onJobAdded(data.job as JobApplication)
+        setUrl('')
+      }
+    } catch {
+      toast('error', 'Request failed. Please check your connection.')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -233,19 +394,24 @@ function ProcessJobBar({ hasCv, onProcessed }: { hasCv: boolean; onProcessed: ()
       <p className="text-xs font-bold uppercase tracking-widest text-slate mb-3">Process a new job</p>
       {!hasCv ? (
         <div className="text-sm text-warn bg-amber-50 rounded-xl p-4">
-          Upload your CV first — <a href="/setup" className="font-semibold underline">go to setup →</a>
+          Upload your CV above before analysing jobs.
         </div>
       ) : (
         <>
           <div className="flex gap-3">
-            <input value={url} onChange={e => setUrl(e.target.value)}
+            <input
+              value={url}
+              onChange={e => setUrl(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && process()}
               placeholder="Paste a LinkedIn, Indeed, or any job URL…"
               className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-brand outline-none"
               disabled={loading}
             />
-            <button onClick={process} disabled={loading || !url.trim()}
-              className="px-5 py-2.5 bg-brand text-white rounded-xl font-semibold text-sm disabled:opacity-40 whitespace-nowrap">
+            <button
+              onClick={process}
+              disabled={loading || !url.trim()}
+              className="px-5 py-2.5 bg-brand text-white rounded-xl font-semibold text-sm disabled:opacity-40 whitespace-nowrap"
+            >
               {loading ? (
                 <span className="flex items-center gap-2">
                   <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
@@ -262,14 +428,6 @@ function ProcessJobBar({ hasCv, onProcessed }: { hasCv: boolean; onProcessed: ()
               Fetching job → scoring your fit → tailoring CV → writing cover letter…
             </p>
           )}
-          {result && (
-            <p className={`text-sm mt-3 px-4 py-2.5 rounded-xl ${
-              result.type === 'success' ? 'bg-green-50 text-green-800' :
-              result.type === 'skip'    ? 'bg-amber-50 text-amber-800' :
-                                          'bg-red-50 text-red-700'}`}>
-              {result.msg}
-            </p>
-          )}
         </>
       )}
     </div>
@@ -277,65 +435,90 @@ function ProcessJobBar({ hasCv, onProcessed }: { hasCv: boolean; onProcessed: ()
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
+
 export default function DashboardClient({
-  initialJobs, stats, hasCv
-}: { initialJobs: JobApplication[]; stats: JobStats; hasCv: boolean }) {
-  const router                  = useRouter()
-  const [, startTransition]     = useTransition()
+  initialJobs, initialHasCv,
+}: { initialJobs: JobApplication[]; initialHasCv: boolean }) {
   const [jobs, setJobs]         = useState(initialJobs)
+  const [hasCv, setHasCv]       = useState(initialHasCv)
   const [selected, setSelected] = useState<JobApplication | null>(null)
   const [filter, setFilter]     = useState<JobStatus | 'all'>('all')
   const [search, setSearch]     = useState('')
   const [sortBy, setSort]       = useState<'date' | 'score' | 'company'>('date')
+  const [page, setPage]         = useState(0)
 
-  function refresh() {
-    startTransition(() => router.refresh())
+  // Reset to first page when filters change
+  useEffect(() => { setPage(0) }, [filter, search, sortBy])
+
+  const stats = computeStats(jobs)
+
+  function addJob(job: JobApplication) {
+    setJobs(prev => [job, ...prev])
   }
 
   async function updateStatus(id: string, status: JobStatus) {
-    await fetch('/api/update-status', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, status }) })
+    await fetch('/api/update-status', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, status }),
+    })
     setJobs(js => js.map(j => j.id === id ? { ...j, status } : j))
     if (selected?.id === id) setSelected(s => s ? { ...s, status } : null)
   }
 
-  const displayed = jobs
+  function removeJob(id: string) {
+    setJobs(js => js.filter(j => j.id !== id))
+  }
+
+  const filtered = jobs
     .filter(j => filter === 'all' || j.status === filter)
     .filter(j => !search || `${j.company} ${j.role} ${j.location}`.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => sortBy === 'score' ? (b.fit_score ?? 0) - (a.fit_score ?? 0)
+    .sort((a, b) =>
+      sortBy === 'score'   ? (b.fit_score ?? 0) - (a.fit_score ?? 0)
       : sortBy === 'company' ? (a.company ?? '').localeCompare(b.company ?? '')
-      : new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      : new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const displayed  = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   const wtBg = (wt: string | null) =>
     wt === 'remote' ? 'bg-green-50 text-green-800' :
-    wt === 'hybrid' ? 'bg-blue-50 text-blue-800' : 'bg-gray-100 text-gray-600'
+    wt === 'hybrid' ? 'bg-blue-50 text-blue-800'   : 'bg-gray-100 text-gray-600'
 
   return (
     <main className="max-w-6xl mx-auto px-6 py-8">
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Processed"      value={stats.total}                   sub={`${stats.skipped} skipped`}             accent="#6366f1" />
-        <StatCard label="Applied"        value={stats.applied}                 sub={`${stats.interviewing} interviewing`}   accent="#0ea5e9" />
-        <StatCard label="Avg Fit Score"  value={stats.avg_fit_score ?? '—'}    sub="out of 100"                             accent="#f59e0b" />
+        <StatCard label="Processed"      value={stats.total}                                                              sub={`${stats.skipped} skipped`}           accent="#6366f1" />
+        <StatCard label="Applied"        value={stats.applied}                                                            sub={`${stats.interviewing} interviewing`} accent="#0ea5e9" />
+        <StatCard label="Avg Fit Score"  value={stats.avg_fit_score ?? '—'}                                               sub="out of 100"                           accent="#f59e0b" />
         <StatCard label="Interview Rate" value={stats.interview_rate_pct ? `${stats.interview_rate_pct}%` : '—'}
-          sub={stats.offers > 0 ? `${stats.offers} offer${stats.offers > 1 ? 's' : ''}` : 'no offers yet'} accent="#10b981" />
+          sub={stats.offers > 0 ? `${stats.offers} offer${stats.offers > 1 ? 's' : ''}` : 'no offers yet'}               accent="#10b981" />
       </div>
 
-      {/* Process new job */}
-      <ProcessJobBar hasCv={hasCv} onProcessed={refresh} />
+      {/* CV section */}
+      <CvSection hasCv={hasCv} onUploaded={() => setHasCv(true)} />
+
+      {/* Process job */}
+      <ProcessJobBar hasCv={hasCv} onJobAdded={addJob} />
 
       {/* Filters */}
       <div className="flex gap-3 mb-4 flex-wrap items-center">
-        <input value={search} onChange={e => setSearch(e.target.value)}
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
           placeholder="Search…"
-          className="px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-brand w-44" />
+          className="px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-brand w-44"
+        />
         <div className="flex gap-2 flex-wrap">
           {(['all', ...Object.keys(STATUS_META)] as (JobStatus | 'all')[]).map(s => {
             const m = s !== 'all' ? STATUS_META[s as JobStatus] : null
             return (
               <button key={s} onClick={() => setFilter(s)}
                 className="px-3 py-1.5 rounded-full text-xs font-bold border transition-all"
-                style={filter === s ? { background: m?.bg ?? '#ede9fe', color: m?.color ?? '#6366f1', borderColor: m?.color ?? '#6366f1' }
+                style={filter === s
+                  ? { background: m?.bg ?? '#ede9fe', color: m?.color ?? '#6366f1', borderColor: m?.color ?? '#6366f1' }
                   : { background: '#fff', color: '#6b7280', borderColor: '#e5e7eb' }}>
                 {s === 'all' ? 'All' : m!.label}
               </button>
@@ -355,12 +538,10 @@ export default function DashboardClient({
       {/* Table */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="grid gap-0" style={{ gridTemplateColumns: '52px 1.5fr 1fr 100px 72px 140px' }}>
-          {/* Header */}
-          {['Score','Company / Role','Location','Type','Date','Status'].map(h => (
+          {['Score', 'Company / Role', 'Location', 'Type', 'Date', 'Status'].map(h => (
             <div key={h} className="px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate border-b border-gray-100">{h}</div>
           ))}
 
-          {/* Rows */}
           {displayed.length === 0 && (
             <div className="col-span-6 py-16 text-center text-slate text-sm">
               {jobs.length === 0
@@ -368,10 +549,13 @@ export default function DashboardClient({
                 : 'No applications match your filters.'}
             </div>
           )}
-          {displayed.map((job, i) => (
+
+          {displayed.map(job => (
             <div key={job.id} onClick={() => setSelected(job)} className="contents group cursor-pointer">
               {[
-                <div key="score" className="px-3 py-4 flex items-center border-b border-gray-50 group-hover:bg-gray-50/80"><ScoreBadge score={job.fit_score} /></div>,
+                <div key="score" className="px-3 py-4 flex items-center border-b border-gray-50 group-hover:bg-gray-50/80">
+                  <ScoreBadge score={job.fit_score} />
+                </div>,
                 <div key="company" className="px-4 py-4 border-b border-gray-50 group-hover:bg-gray-50/80">
                   <p className="font-semibold text-ink text-sm">{job.company}</p>
                   <p className="text-xs text-slate mt-0.5">{job.role}</p>
@@ -381,7 +565,7 @@ export default function DashboardClient({
                   <span className={`text-xs font-semibold px-2 py-1 rounded-md capitalize ${wtBg(job.work_type)}`}>{job.work_type}</span>
                 </div>,
                 <div key="date" className="px-4 py-4 border-b border-gray-50 text-xs text-slate group-hover:bg-gray-50/80">
-                  {new Date(job.created_at).toLocaleDateString('en-NL', { day: 'numeric', month: 'short' })}
+                  {new Date(job.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
                 </div>,
                 <div key="status" className="px-4 py-4 border-b border-gray-50 group-hover:bg-gray-50/80" onClick={e => e.stopPropagation()}>
                   <StatusPill status={job.status} onChange={s => updateStatus(job.id, s)} />
@@ -392,12 +576,44 @@ export default function DashboardClient({
         </div>
       </div>
 
-      <p className="text-xs text-gray-400 text-center mt-4">
-        {displayed.length} of {jobs.length} applications
-      </p>
+      {/* Pagination */}
+      <div className="flex items-center justify-between mt-4">
+        <p className="text-xs text-gray-400">
+          {filtered.length === 0
+            ? '0 applications'
+            : `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, filtered.length)} of ${filtered.length}`}
+        </p>
+        {totalPages > 1 && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold border bg-white text-slate border-gray-200 disabled:opacity-40"
+            >
+              ← Prev
+            </button>
+            <span className="px-3 py-1.5 text-xs text-slate">
+              {page + 1} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold border bg-white text-slate border-gray-200 disabled:opacity-40"
+            >
+              Next →
+            </button>
+          </div>
+        )}
+      </div>
 
-      {/* Detail panel */}
-      {selected && <DetailPanel job={selected} onClose={() => setSelected(null)} onStatusChange={updateStatus} />}
+      {selected && (
+        <DetailPanel
+          job={selected}
+          onClose={() => setSelected(null)}
+          onStatusChange={updateStatus}
+          onDelete={removeJob}
+        />
+      )}
     </main>
   )
 }

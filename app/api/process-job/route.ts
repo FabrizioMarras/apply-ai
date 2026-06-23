@@ -8,7 +8,8 @@ import {
 } from 'docx'
 
 const ai = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-const THRESHOLD = parseInt(process.env.FIT_SCORE_THRESHOLD ?? '60')
+const THRESHOLD   = parseInt(process.env.FIT_SCORE_THRESHOLD ?? '60')
+const DAILY_LIMIT = parseInt(process.env.DAILY_JOB_LIMIT ?? '10')
 
 // ── Claude helper ─────────────────────────────────────────────────────────────
 
@@ -18,7 +19,9 @@ async function callClaude(prompt: string, maxTokens = 1000): Promise<string> {
     max_tokens: maxTokens,
     messages: [{ role: 'user', content: prompt }],
   })
-  return (msg.content[0] as { text: string }).text
+  const block = msg.content[0]
+  if (!block || block.type !== 'text') throw new Error('Unexpected response type from Claude')
+  return block.text
 }
 
 function parseJson<T>(raw: string): T {
@@ -26,21 +29,20 @@ function parseJson<T>(raw: string): T {
 }
 
 // ── Step 1: Fetch job page ────────────────────────────────────────────────────
+// Uses Jina AI Reader (r.jina.ai) to extract clean text from any URL,
+// including JavaScript-rendered job boards like LinkedIn, Greenhouse, Lever.
 
 async function fetchJobText(url: string): Promise<string> {
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; ApplyAI/1.0)' },
-    signal: AbortSignal.timeout(15000),
+  const res = await fetch(`https://r.jina.ai/${url}`, {
+    headers: { Accept: 'text/plain' },
+    signal: AbortSignal.timeout(25000),
   })
-  if (!res.ok) throw new Error(`Could not fetch URL (${res.status})`)
-  const html = await res.text()
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 8000)
+  if (!res.ok) throw new Error(`Could not fetch job page (${res.status}). Check the URL is publicly accessible.`)
+  const text = (await res.text()).trim()
+  if (text.length < 200) {
+    throw new Error('Job page returned too little content. The URL may require a login or the page may be empty.')
+  }
+  return text.slice(0, 8000)
 }
 
 // ── Step 2: Extract job details ───────────────────────────────────────────────
@@ -170,7 +172,7 @@ async function buildCvDocx(
   tailored: Awaited<ReturnType<typeof tailorCV>>,
   job: Awaited<ReturnType<typeof extractJob>>,
 ): Promise<Buffer> {
-  const BRAND   = '2E3192'   // deep indigo
+  const BRAND   = '2E3192'
   const DARK    = '111827'
   const MUTED   = '6B7280'
   const DIVIDER = 'E5E7EB'
@@ -189,7 +191,6 @@ async function buildCvDocx(
 
   const children: (Paragraph | Table)[] = []
 
-  // ── Name + contact header ──
   children.push(new Paragraph({
     children: [new TextRun({ text: tailored.full_name || 'Your Name', bold: true, size: 52, color: DARK, font: 'Calibri' })],
     alignment: AlignmentType.LEFT,
@@ -204,23 +205,19 @@ async function buildCvDocx(
     }))
   }
 
-  // Target role line
   children.push(new Paragraph({
     children: [new TextRun({ text: `Applying for: ${job.role} at ${job.company}`, size: 17, color: BRAND, italics: true, font: 'Calibri' })],
     spacing: { after: 200 },
   }))
 
-  // ── Professional Summary ──
   children.push(sectionHeading('Professional Summary'))
   children.push(new Paragraph({
     children: [new TextRun({ text: tailored.professional_summary, size: 20, color: DARK, font: 'Calibri' })],
     spacing: { after: 120 },
   }))
 
-  // ── Key Skills ──
   if (tailored.skills_to_highlight?.length) {
     children.push(sectionHeading('Key Skills'))
-    // 2-column skill grid
     const half = Math.ceil(tailored.skills_to_highlight.length / 2)
     const col1 = tailored.skills_to_highlight.slice(0, half)
     const col2 = tailored.skills_to_highlight.slice(half)
@@ -233,15 +230,13 @@ async function buildCvDocx(
         ],
       })
     )
-    children.push(new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE }, borders: { top: {style:BorderStyle.NONE}, bottom: {style:BorderStyle.NONE}, left: {style:BorderStyle.NONE}, right: {style:BorderStyle.NONE}, insideH: {style:BorderStyle.NONE}, insideV: {style:BorderStyle.NONE} } }))
+    children.push(new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE }, borders: { top: {style:BorderStyle.NONE}, bottom: {style:BorderStyle.NONE}, left: {style:BorderStyle.NONE}, right: {style:BorderStyle.NONE} } }))
     children.push(new Paragraph({ children: [], spacing: { after: 120 } }))
   }
 
-  // ── Experience ──
   if (tailored.experience?.length) {
     children.push(sectionHeading('Experience'))
     for (const exp of tailored.experience) {
-      // Role + company row
       children.push(new Paragraph({
         children: [
           new TextRun({ text: exp.role, bold: true, size: 22, color: DARK, font: 'Calibri' }),
@@ -249,19 +244,16 @@ async function buildCvDocx(
         ],
         spacing: { before: 160, after: 40 },
       }))
-      // Dates
       children.push(new Paragraph({
         children: [new TextRun({ text: exp.dates, size: 17, color: MUTED, italics: true, font: 'Calibri' })],
         spacing: { after: 80 },
       }))
-      // Bullets
       for (const b of exp.bullets) {
         children.push(bullet(b))
       }
     }
   }
 
-  // ── Education ──
   if (tailored.education?.length) {
     children.push(sectionHeading('Education'))
     for (const edu of tailored.education) {
@@ -279,7 +271,6 @@ async function buildCvDocx(
     }
   }
 
-  // ── Languages ──
   if (tailored.languages?.length) {
     children.push(sectionHeading('Languages'))
     children.push(new Paragraph({
@@ -290,11 +281,7 @@ async function buildCvDocx(
 
   const doc = new Document({
     sections: [{
-      properties: {
-        page: {
-          margin: { top: 720, bottom: 720, left: 900, right: 900 },
-        },
-      },
+      properties: { page: { margin: { top: 720, bottom: 720, left: 900, right: 900 } } },
       children,
     }],
   })
@@ -302,7 +289,7 @@ async function buildCvDocx(
   return Buffer.from(await Packer.toBuffer(doc))
 }
 
-// ── Step 6: Cover letter ──────────────────────────────────────────────────────
+// ── Step 6: Cover letter text ─────────────────────────────────────────────────
 
 async function writeCoverLetter(
   job: Awaited<ReturnType<typeof extractJob>>,
@@ -327,13 +314,114 @@ Summary: ${summary}
 `, 800)
 }
 
+// ── Step 7: Cover letter .docx ────────────────────────────────────────────────
+
+async function buildCoverLetterDocx(
+  text: string,
+  tailored: Awaited<ReturnType<typeof tailorCV>>,
+  job: Awaited<ReturnType<typeof extractJob>>,
+): Promise<Buffer> {
+  const BRAND = '2E3192'
+  const DARK  = '111827'
+  const MUTED = '6B7280'
+  const DIVIDER = 'E5E7EB'
+
+  const today = new Date().toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  })
+
+  // Split on blank lines; collapse any inline newlines within a paragraph
+  const paras = text
+    .split(/\n{2,}/)
+    .map(p => p.replace(/\n/g, ' ').trim())
+    .filter(Boolean)
+
+  const contactParts = [
+    tailored.email, tailored.phone, tailored.location, tailored.linkedin,
+  ].filter(Boolean)
+
+  const children: Paragraph[] = [
+    // Candidate name
+    new Paragraph({
+      children: [new TextRun({ text: tailored.full_name || 'Your Name', bold: true, size: 52, color: DARK, font: 'Calibri' })],
+      spacing: { after: 60 },
+    }),
+    // Contact line
+    ...(contactParts.length ? [new Paragraph({
+      children: [new TextRun({ text: contactParts.join('  ·  '), size: 18, color: MUTED, font: 'Calibri' })],
+      spacing: { after: 40 },
+    })] : []),
+    // Divider spacer
+    new Paragraph({
+      children: [],
+      border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: DIVIDER } },
+      spacing: { after: 280 },
+    }),
+    // Date
+    new Paragraph({
+      children: [new TextRun({ text: today, size: 19, color: MUTED, font: 'Calibri', italics: true })],
+      spacing: { after: 240 },
+    }),
+    // Addressee
+    new Paragraph({
+      children: [new TextRun({ text: 'Hiring Manager', bold: true, size: 20, color: DARK, font: 'Calibri' })],
+      spacing: { after: 40 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: job.company, size: 20, color: DARK, font: 'Calibri' })],
+      spacing: { after: 40 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: job.location ?? '', size: 19, color: MUTED, font: 'Calibri' })],
+      spacing: { after: 320 },
+    }),
+    // Body paragraphs
+    ...paras.map(p => new Paragraph({
+      children: [new TextRun({ text: p, size: 20, color: DARK, font: 'Calibri' })],
+      spacing: { after: 200 },
+    })),
+    // Closing
+    new Paragraph({
+      children: [new TextRun({ text: 'Sincerely,', size: 20, color: DARK, font: 'Calibri' })],
+      spacing: { before: 280, after: 200 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: tailored.full_name || 'Your Name', bold: true, size: 20, color: BRAND, font: 'Calibri' })],
+    }),
+  ]
+
+  const doc = new Document({
+    sections: [{
+      properties: { page: { margin: { top: 720, bottom: 720, left: 900, right: 900 } } },
+      children,
+    }],
+  })
+
+  return Buffer.from(await Packer.toBuffer(doc))
+}
+
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  const supabase = createClient()
+  const supabase = await createClient()
 
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
   if (authErr || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Rate limiting: check daily usage
+  const dayStart = new Date()
+  dayStart.setHours(0, 0, 0, 0)
+  const { count } = await supabase
+    .from('job_applications')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+    .gte('created_at', dayStart.toISOString())
+  if (count !== null && count >= DAILY_LIMIT) {
+    return NextResponse.json(
+      { error: `Daily limit of ${DAILY_LIMIT} job analyses reached. Try again tomorrow.` },
+      { status: 429 }
+    )
+  }
 
   const { data: profile } = await supabase
     .from('user_profiles')
@@ -345,8 +433,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No CV found. Please upload your CV first.' }, { status: 400 })
   }
 
-  const { jobUrl } = await req.json()
+  const body = await req.json()
+  const { jobUrl } = body
   if (!jobUrl) return NextResponse.json({ error: 'jobUrl is required' }, { status: 400 })
+
+  // Validate URL
+  let parsedUrl: URL
+  try {
+    parsedUrl = new URL(jobUrl)
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      throw new Error('invalid protocol')
+    }
+  } catch {
+    return NextResponse.json({ error: 'Invalid URL. Please provide a valid http or https link.' }, { status: 400 })
+  }
 
   const { data: existing } = await supabase
     .from('job_applications')
@@ -360,9 +460,22 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const rawText   = await fetchJobText(jobUrl)
-    const job       = await extractJob(rawText)
-    const fit       = await scoreJob(job, profile.cv_raw_text)
+    const rawText = await fetchJobText(jobUrl)
+    const job     = await extractJob(rawText)
+
+    // Guard: if extraction couldn't find a role or company, the page was
+    // likely a login wall, a redirect, or not a job posting at all.
+    if (
+      (!job.role    || job.role    === 'unknown') &&
+      (!job.company || job.company === 'unknown') &&
+      job.required_skills.length === 0
+    ) {
+      return NextResponse.json({
+        error: 'Could not extract job details from this URL. The page may require login, or it may not be a job posting. Try a direct link to the job listing.',
+      }, { status: 422 })
+    }
+
+    const fit = await scoreJob(job, profile.cv_raw_text)
 
     const baseRecord = {
       user_id:         user.id,
@@ -381,66 +494,63 @@ export async function POST(req: NextRequest) {
       recommendation:  fit.recommendation,
     }
 
-    // Below threshold → skip, no documents generated
     if (fit.score < THRESHOLD) {
       const { data } = await supabase
         .from('job_applications')
         .insert({ ...baseRecord, status: 'skipped' })
-        .select('id')
+        .select('*')
         .single()
-      return NextResponse.json({ id: data?.id, skipped: true, score: fit.score, reason: fit.reason })
+      return NextResponse.json({ skipped: true, score: fit.score, reason: fit.reason, job: data })
     }
 
-    // Tailor CV content (structured JSON)
     const tailored = await tailorCV(job, fit, profile.cv_raw_text)
 
-    // Build full .docx CV
-    const cvBuffer = await buildCvDocx(tailored, job)
+    // Build CV docx and write cover letter text in parallel
+    const [cvBuffer, coverLetterText] = await Promise.all([
+      buildCvDocx(tailored, job),
+      writeCoverLetter(job, fit, tailored.professional_summary),
+    ])
 
-    // Cover letter text
-    const coverLetterText = await writeCoverLetter(job, fit, tailored.professional_summary)
+    // Build formatted cover letter docx from the generated text
+    const coverLetterBuffer = await buildCoverLetterDocx(coverLetterText, tailored, job)
 
-    const ts = Date.now()
+    const ts   = Date.now()
     const slug = `${user.id}/${ts}`
 
-    // Upload tailored CV .docx
-    await supabase.storage
-      .from('job-documents')
-      .upload(`${slug}-cv.docx`, cvBuffer, {
-        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        upsert: false,
-      })
+    await supabase.storage.from('job-documents').upload(`${slug}-cv.docx`, cvBuffer, {
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      upsert: false,
+    })
     const { data: cvUrlData } = supabase.storage.from('job-documents').getPublicUrl(`${slug}-cv.docx`)
 
-    // Upload cover letter .txt
-    await supabase.storage
-      .from('job-documents')
-      .upload(`${slug}-cover.txt`, coverLetterText, { contentType: 'text/plain', upsert: false })
-    const { data: coverUrlData } = supabase.storage.from('job-documents').getPublicUrl(`${slug}-cover.txt`)
+    await supabase.storage.from('job-documents').upload(`${slug}-cover.docx`, coverLetterBuffer, {
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      upsert: false,
+    })
+    const { data: coverUrlData } = supabase.storage.from('job-documents').getPublicUrl(`${slug}-cover.docx`)
 
-    // Save full record
     const { data: record } = await supabase
       .from('job_applications')
       .insert({
         ...baseRecord,
-        tailored_summary:   tailored.professional_summary,
-        tailored_bullets:   tailored.experience,      // full experience array
-        tailored_skills:    tailored.skills_to_highlight,
-        cover_letter_text:  coverLetterText,
-        cover_letter_url:   coverUrlData?.publicUrl ?? null,
-        cv_file_url:        cvUrlData?.publicUrl ?? null,  // downloadable .docx
+        tailored_summary:  tailored.professional_summary,
+        tailored_bullets:  tailored.experience,
+        tailored_skills:   tailored.skills_to_highlight,
+        cover_letter_text: coverLetterText,
+        cover_letter_url:  coverUrlData?.publicUrl ?? null,
+        cv_file_url:       cvUrlData?.publicUrl ?? null,
         status: 'new',
       })
-      .select('id')
+      .select('*')
       .single()
 
     return NextResponse.json({
-      id:             record?.id,
       skipped:        false,
       score:          fit.score,
       company:        job.company,
       role:           job.role,
       recommendation: fit.recommendation,
+      job:            record,
     })
 
   } catch (err: unknown) {

@@ -1,6 +1,6 @@
 # ApplyAI — Technical Documentation
 
-> Last updated: June 2026 | Version: 0.1.0
+> Last updated: June 2026 | Version: 0.2.0
 
 ---
 
@@ -25,40 +25,50 @@
 
 ## 1. Architecture overview
 
-ApplyAI is a **Next.js 14 App Router** application. All AI calls and data operations run server-side (API routes), so no API keys are ever exposed to the browser.
+ApplyAI is a **Next.js App Router** application. All AI calls and data operations run server-side (API routes), so no API keys are ever exposed to the browser.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                     Browser (React)                      │
-│   Login → Setup → Dashboard → Apply panel               │
+│   Login → Dashboard (CV upload + job processor + table) │
 └───────────────────────┬─────────────────────────────────┘
                         │  HTTP (fetch)
 ┌───────────────────────▼─────────────────────────────────┐
 │              Next.js API Routes (Server)                 │
 │                                                          │
-│  POST /api/upload-cv      ← PDF parsing (pdf-parse)      │
-│  POST /api/process-job    ← Full AI pipeline             │
-│  PATCH /api/update-status ← Status + notes               │
-└──────────┬───────────────────────┬──────────────────────┘
-           │                       │
+│  POST   /api/upload-cv      ← PDF parsing (pdf-parse)   │
+│  POST   /api/process-job    ← Full AI pipeline           │
+│  PATCH  /api/update-status  ← Status + notes             │
+│  DELETE /api/delete-job     ← Remove application         │
+└──────────┬──────────────────────┬───────────────────────┘
+           │                      │
 ┌──────────▼──────────┐  ┌────────▼────────────────────── ┐
-│   Anthropic API      │  │         Supabase               │
-│   claude-sonnet-4-6  │  │                                │
-│                      │  │  Auth   (email/password)       │
-│  · Extract job info  │  │  DB     (job_applications,     │
-│  · Score CV fit      │  │          user_profiles)        │
-│  · Tailor full CV    │  │  Storage (cv-uploads,          │
-│  · Write cover letter│  │           job-documents)       │
-└──────────────────────┘  └────────────────────────────────┘
+│   Jina AI Reader     │  │         Supabase               │
+│   r.jina.ai          │  │                                │
+│   (free, no key)     │  │  Auth   (email/password)       │
+└──────────┬───────────┘  │  DB     (job_applications,     │
+           │               │          user_profiles)        │
+┌──────────▼──────────┐   │  Storage (cv-uploads,          │
+│   Anthropic API      │  │           job-documents)       │
+│   claude-sonnet-4-6  │  └────────────────────────────────┘
+│                      │
+│  · Extract job info  │
+│  · Score CV fit      │
+│  · Tailor full CV    │
+│  · Write cover letter│
+└──────────────────────┘
 ```
 
 ### Key design decisions
 
 - **No Python backend** — everything runs in Next.js API routes (Node.js). Simpler to deploy, one codebase.
+- **Jina AI Reader for job fetching** — `https://r.jina.ai/{url}` renders JavaScript-heavy pages (LinkedIn, Greenhouse, Lever, Workday) server-side and returns clean text. Free, no API key required.
 - **Server-side AI calls** — `ANTHROPIC_API_KEY` never leaves the server. API routes validate Supabase auth before calling Claude.
 - **PDF parsed server-side** — `pdf-parse` runs in the API route, not the browser. Handles text-based PDFs up to 10MB.
-- **Supabase RLS as the security boundary** — even if someone calls the API directly, they can only read/write their own rows. Defence in depth.
-- **CV stored as text, documents as files** — the raw CV text lives in `user_profiles.cv_raw_text` for fast AI access. The generated `.docx` files live in Supabase Storage and are linked by URL.
+- **Supabase RLS as the security boundary** — even if API auth is bypassed, users can only read/write their own rows. Defence in depth.
+- **CV stored as text, documents as files** — the raw CV text lives in `user_profiles.cv_raw_text` for fast AI access. Generated `.docx` files live in Supabase Storage and are linked by URL.
+- **Stats computed client-side** — dashboard stats are derived from the in-memory job list, keeping the UI reactive without extra DB queries.
+- **Rate limiting via DB count** — each user is limited to `DAILY_JOB_LIMIT` job analyses per day (default: 10), enforced by counting today's rows before running the pipeline.
 
 ---
 
@@ -70,42 +80,42 @@ apply-ai/
 ├── app/                          # Next.js App Router
 │   ├── api/
 │   │   ├── upload-cv/
-│   │   │   └── route.ts          # CV upload: receives PDF, parses text, upserts user_profiles
+│   │   │   └── route.ts          # CV upload: PDF → text → upserts user_profiles
 │   │   ├── process-job/
 │   │   │   └── route.ts          # Full AI pipeline (see §5)
-│   │   └── update-status/
-│   │       └── route.ts          # PATCH: update status or notes on a job_application
+│   │   ├── update-status/
+│   │   │   └── route.ts          # PATCH: update status or notes
+│   │   └── delete-job/
+│   │       └── route.ts          # DELETE: remove a job application
 │   │
 │   ├── login/
 │   │   └── page.tsx              # Email/password auth (client component)
-│   ├── setup/
-│   │   └── page.tsx              # CV upload onboarding (client component)
-│   ├── apply/
-│   │   └── [id]/
-│   │       └── page.tsx          # Apply page: server component, passes job to ApplyClient
-│   ├── page.tsx                  # Dashboard: server component, fetches jobs + stats
-│   ├── layout.tsx                # Root layout with Inter font
+│   ├── page.tsx                  # Dashboard: server component, fetches jobs
+│   ├── layout.tsx                # Root layout: Inter font, ToastProvider, ErrorBoundary
+│   ├── icon.svg                  # Favicon (brand colour + "A")
+│   ├── not-found.tsx             # Custom 404 page
 │   └── globals.css               # Tailwind base + scrollbar styles
 │
 ├── components/
-│   ├── DashboardClient.tsx       # Main interactive UI: stats, job processor, table, panel
-│   ├── ApplyClient.tsx           # Apply mode: download CV, copy cover letter, mark applied
-│   └── Navbar.tsx                # Top nav with sign out + CV upload prompt
+│   ├── DashboardClient.tsx       # Main interactive UI (see §8)
+│   ├── Navbar.tsx                # Sticky top nav with sign out
+│   ├── Toast.tsx                 # ToastProvider + useToast() hook
+│   └── ErrorBoundary.tsx         # React error boundary with recovery UI
 │
 ├── lib/
-│   ├── types.ts                  # All shared TypeScript types + STATUS_META constant
+│   ├── types.ts                  # All shared TypeScript types + STATUS_META + scoreColor
 │   ├── supabase-server.ts        # createClient() for Server Components + API routes
 │   └── supabase-client.ts        # createClient() for Client Components (browser)
 │
 ├── supabase/
-│   └── schema.sql                # Full DB schema: tables, RLS, indexes, stats view
+│   └── schema.sql                # Full DB schema: tables, RLS, indexes, stats view (deprecated)
 │
-├── middleware.ts                 # Auth guard: redirects unauthenticated users to /login
-├── next.config.js                # serverComponentsExternalPackages for pdf-parse, docx
+├── proxy.ts                      # Auth session helper (Supabase SSR pattern)
+├── next.config.js                # External packages config + security headers
 ├── tailwind.config.js            # Custom colors: ink, mist, slate, brand, emerge, warn, danger
 ├── tsconfig.json
 ├── package.json
-├── .env.local.example
+├── .env.example                  # Environment variable template
 ├── README.md
 └── TECHNICAL.md                  # This file
 ```
@@ -118,13 +128,13 @@ Two main tables, both protected by Row Level Security.
 
 ### `user_profiles`
 
-Stores each user's extracted CV text and preferences. One row per user, keyed to `auth.users.id`.
+One row per user, keyed to `auth.users.id`.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | uuid (PK) | References `auth.users(id)` |
 | `cv_raw_text` | text | Full text extracted from uploaded PDF |
-| `cv_file_url` | text | Public URL of original PDF in `cv-uploads` bucket |
+| `cv_file_url` | text | Signed URL (1-year expiry) to original PDF in private `cv-uploads` bucket |
 | `full_name` | text | Optional display name |
 | `location` | text | e.g. "Amsterdam, NL" |
 | `target_roles` | text | e.g. "Product Manager, Product Lead" |
@@ -153,11 +163,11 @@ One row per processed job URL per user.
 | `strengths` | jsonb | Array of candidate strengths for this role |
 | `gaps` | jsonb | Array of skill gaps identified |
 | `recommendation` | text | `apply\|skip\|stretch` |
-| `cv_file_url` | text | Supabase Storage URL → tailored `.docx` CV |
-| `cover_letter_url` | text | Supabase Storage URL → cover letter `.txt` |
-| `cover_letter_text` | text | Full cover letter text (for in-app copy) |
+| `cv_file_url` | text | Public Supabase Storage URL → tailored `.docx` CV |
+| `cover_letter_url` | text | Public Supabase Storage URL → cover letter `.docx` |
+| `cover_letter_text` | text | Plain cover letter text (for in-app copy-paste) |
 | `tailored_summary` | text | 3–4 sentence tailored professional summary |
-| `tailored_bullets` | jsonb | Full experience array with rewritten bullets |
+| `tailored_bullets` | jsonb | Full experience array: `[{ company, role, dates, bullets[] }]` |
 | `tailored_skills` | jsonb | Ordered skills list for this role |
 | `status` | text | `new\|applied\|interviewing\|offer\|rejected\|skipped` |
 | `notes` | text | User's free-text notes |
@@ -165,9 +175,13 @@ One row per processed job URL per user.
 | `applied_at` | timestamptz | Set when status changes to `applied` |
 | `updated_at` | timestamptz | Auto-updated by trigger |
 
-### `my_job_stats` (view)
+### `my_job_stats` (view — deprecated)
 
-A per-user stats view used by the dashboard header cards. Returns counts by status, average fit score, and interview rate — automatically filtered to `auth.uid()`.
+This view was used by earlier versions of the dashboard. Stats are now computed client-side from the job list for real-time reactivity. The view is harmless but can be removed:
+
+```sql
+DROP VIEW IF EXISTS my_job_stats;
+```
 
 ### RLS policies
 
@@ -197,76 +211,90 @@ CREATE POLICY "jobs: own rows only" ON job_applications
 1. Validate session → get `user.id`
 2. Parse PDF with `pdf-parse` → extract raw text
 3. Validate text length ≥ 100 chars (rejects scanned image PDFs)
-4. Upload original PDF to `cv-uploads/{user_id}/cv-{timestamp}.pdf`
-5. Upsert `user_profiles` with `cv_raw_text` and `cv_file_url`
+4. Upload PDF to private `cv-uploads/{user_id}/cv-{timestamp}.pdf`
+5. Generate 1-year signed URL for the uploaded file
+6. Upsert `user_profiles` with `cv_raw_text` and signed `cv_file_url`
 
 **Response:**
 ```json
 { "success": true, "charCount": 3842, "preview": "John Smith\nAmsterdam…" }
 ```
 
-**Errors:**
-- `400` — no file, wrong type, too large, or unreadable text
-- `401` — unauthenticated
-- `500` — Supabase or parsing error
+**Errors:** `400` (no file / wrong type / too large / unreadable), `401` (unauthenticated), `500` (storage or DB error)
 
 ---
 
 ### `POST /api/process-job`
 
-**Purpose:** Full AI pipeline — fetch job, score fit, tailor CV, build `.docx`, write cover letter, save everything.
+**Purpose:** Full AI pipeline — fetch job, validate, score, tailor CV, build `.docx` files, save everything.
 
 **Auth:** Requires valid Supabase session cookie.
 
 **Request body:**
 ```json
-{ "jobUrl": "https://linkedin.com/jobs/view/12345" }
+{ "jobUrl": "https://example.com/jobs/product-manager" }
 ```
 
-**Flow:** See [§5 AI pipeline](#5-ai-pipeline-in-detail) for full detail.
+**Guards (in order):**
+1. Rate limit — rejects if user has already processed `DAILY_JOB_LIMIT` jobs today (HTTP 429)
+2. CV check — rejects if no CV uploaded yet (HTTP 400)
+3. URL validation — rejects non-http/https URLs (HTTP 400)
+4. Duplicate check — rejects if this URL was already processed (HTTP 409)
+5. Content validation — rejects if Jina returns < 200 chars (likely login wall or empty page)
+6. Extraction validation — rejects if Claude can't find a role, company, or skills (likely not a job posting)
+
+**Flow:** See [§5 AI pipeline](#5-ai-pipeline-in-detail).
 
 **Response (success, score ≥ threshold):**
 ```json
 {
-  "id": "uuid",
   "skipped": false,
   "score": 84,
   "company": "Mollie",
   "role": "Senior Product Manager",
-  "recommendation": "apply"
+  "recommendation": "apply",
+  "job": { /* full job_applications row */ }
 }
 ```
 
 **Response (skipped, score < threshold):**
 ```json
 {
-  "id": "uuid",
   "skipped": true,
   "score": 52,
-  "reason": "Creative domain too far from candidate background."
+  "reason": "Creative domain too far from candidate background.",
+  "job": { /* full job_applications row with status: skipped */ }
 }
 ```
 
-**Errors:**
-- `400` — missing `jobUrl`, no CV uploaded yet
-- `401` — unauthenticated
-- `409` — duplicate URL (already processed)
-- `500` — fetch failed, Claude error, Supabase error
+In both cases the full `job` object is returned so the dashboard can update immediately without a page reload.
+
+**Errors:** `400` (missing URL / no CV), `401` (unauth), `409` (duplicate), `422` (not a job posting / login wall), `429` (daily limit), `500` (pipeline error)
 
 ---
 
 ### `PATCH /api/update-status`
 
-**Purpose:** Update job status and/or notes.
-
-**Auth:** Requires valid Supabase session cookie.
+**Purpose:** Update status and/or notes on a job application.
 
 **Request body:**
 ```json
 { "id": "uuid", "status": "applied", "notes": "Recruiter called." }
 ```
 
-Both `status` and `notes` are optional — send either or both. When `status` is `applied`, `applied_at` is also set automatically.
+`status` and `notes` are both optional — send either or both. When `status` is `"applied"`, `applied_at` is also set.
+
+**Response:** `{ "success": true }`
+
+---
+
+### `DELETE /api/delete-job`
+
+**Purpose:** Permanently remove a job application.
+
+**Request body:** `{ "id": "uuid" }`
+
+The route enforces `user_id` ownership — users can only delete their own records.
 
 **Response:** `{ "success": true }`
 
@@ -274,15 +302,25 @@ Both `status` and `notes` are optional — send either or both. When `status` is
 
 ## 5. AI pipeline in detail
 
-All Claude calls use `claude-sonnet-4-6` with structured JSON output. The pipeline runs sequentially in a single API route execution.
+All Claude calls use `claude-sonnet-4-6` with structured JSON output.
 
-### Step 1 — Fetch job page
+### Step 1 — Fetch job page (Jina AI Reader)
 
 ```
-fetch(jobUrl) → strip HTML tags + scripts → plain text → truncate to 8000 chars
+https://r.jina.ai/{jobUrl}
+  → renders JavaScript, strips navigation/ads/boilerplate
+  → returns clean markdown/plain text
+  → truncated to 8000 chars
 ```
 
-Works on LinkedIn, Indeed, Greenhouse, Lever, Ashby, Workday, and most company careers pages. Some sites return minimal content when fetched without a browser session (LinkedIn in particular) — this is a known limitation (see §14).
+Jina AI Reader handles JavaScript-rendered pages that a plain `fetch()` can't read: LinkedIn job listings, Greenhouse, Lever, Workday, Ashby, and most modern career sites. It is free with no API key required.
+
+**Error handling chain:**
+| Condition | HTTP | Error message |
+|-----------|------|---------------|
+| Jina returns 4xx/5xx | 422 | "Could not fetch job page (403). Check the URL is publicly accessible." |
+| Response < 200 chars | 422 | "Job page returned too little content. The URL may require a login…" |
+| Claude finds no role/company/skills | 422 | "Could not extract job details from this URL. The page may require login, or it may not be a job posting." |
 
 ### Step 2 — Extract job details
 
@@ -306,16 +344,16 @@ Claude reads the candidate's `cv_raw_text` (first 3000 chars) and the job descri
   score,           // 0–100
   reason,          // 2–3 sentence explanation
   strengths,       // string[] — candidate's relevant strengths
-  gaps,            // string[] — skills/experience gaps
+  gaps,            // string[] — skill or experience gaps
   recommendation,  // "apply" | "skip" | "stretch"
 }
 ```
 
-If `score < FIT_SCORE_THRESHOLD` (default 60), the job is saved as `skipped` and the pipeline stops here — no documents generated, no further Claude calls.
+If `score < FIT_SCORE_THRESHOLD` (default 60), the job is saved as `skipped` and the pipeline stops. No further Claude calls, no documents generated.
 
 ### Step 4 — Tailor full CV
 
-Claude reads the full CV text (first 4000 chars) and produces a complete restructured CV:
+Claude reads the full CV (first 4000 chars) and produces a complete restructured CV:
 
 ```typescript
 {
@@ -331,36 +369,45 @@ Claude reads the full CV text (first 4000 chars) and produces a complete restruc
 }
 ```
 
-The instruction to Claude explicitly says: *only highlight real experience, naturally reframed. Do not invent anything.* This keeps the output honest.
+Instruction to Claude: *only highlight real experience, naturally reframed. Do not invent anything.*
 
-### Step 5 — Build `.docx` file
+### Step 5 — Build CV `.docx` & write cover letter (parallel)
 
-The `docx` Node.js library assembles a formatted Word document from the tailored CV JSON:
+These two run concurrently with `Promise.all` to save 5–8 seconds:
 
-- **Name** in large bold type
+**CV `.docx`** (built by the `docx` Node.js library):
+- Name in large bold type
 - Contact line (email · phone · location · LinkedIn)
 - "Applying for: [role] at [company]" in brand colour italic
-- **Professional Summary** section
-- **Key Skills** — 2-column grid with skill chips
-- **Experience** — each role with dates and bullet points
-- **Education**
-- **Languages**
+- Professional Summary section
+- Key Skills — 2-column grid
+- Experience — each role with dates and bullet points
+- Education
+- Languages
 
-The file is uploaded to `job-documents/{user_id}/{timestamp}-cv.docx` in Supabase Storage.
-
-### Step 6 — Write cover letter
-
-Claude writes a 3-paragraph cover letter (max 320 words):
-
-1. Specific hook about the company or role
+**Cover letter text** — Claude writes a 3-paragraph cover letter (max 320 words):
+1. Specific hook about this company or role
 2. Evidence of fit + specific value the candidate brings
 3. Confident close with call to action
 
-Saved as plain text to `job-documents/{user_id}/{timestamp}-cover.txt` and also stored in `cover_letter_text` for in-app copy-paste.
+### Step 6 — Build cover letter `.docx`
+
+The plain cover letter text is formatted into a Word document matching the CV's visual style:
+- Candidate header (name, contact line)
+- Divider
+- Date + addressee block (Hiring Manager, company, location)
+- Body paragraphs
+- "Sincerely," closing with candidate name
+
+Both the plain text (`cover_letter_text`) and the `.docx` URL (`cover_letter_url`) are stored — the text powers the in-app copy-paste feature; the file provides the downloadable Word document.
 
 ### Step 7 — Save to Supabase
 
-One `INSERT` into `job_applications` with all extracted data, scores, file URLs, and tailored content.
+Both `.docx` files are uploaded to the public `job-documents` bucket:
+- `{user_id}/{timestamp}-cv.docx`
+- `{user_id}/{timestamp}-cover.docx`
+
+One `INSERT` into `job_applications` stores all extracted data, scores, tailored content, and file URLs.
 
 ### Claude call summary
 
@@ -372,26 +419,23 @@ One `INSERT` into `job_applications` with all extracted data, scores, file URLs,
 | Cover letter | claude-sonnet-4-6 | 800 | ~$0.004 |
 | **Total per job** | | | **~$0.019–0.030** |
 
+Skipped jobs only run steps 2–3: ~$0.005.
+
 ---
 
 ## 6. Authentication & security
 
 Authentication is handled entirely by **Supabase Auth** (email + password). Session cookies are managed by `@supabase/ssr`.
 
-### Middleware (`middleware.ts`)
+### Auth flow
 
-Runs on every non-static, non-API request. Refreshes the session token and redirects unauthenticated users to `/login`. Authenticated users hitting `/login` are redirected to `/`.
-
-```typescript
-// Protected: all routes except /login
-// Public: /login, /_next/*, /api/*
-```
-
-Note: API routes do their own auth check (`supabase.auth.getUser()`) independently of middleware — API routes are excluded from middleware to avoid double-handling.
+- **Login / signup:** `app/login/page.tsx` — client component, calls Supabase Auth directly in the browser.
+- **Protected pages:** `app/page.tsx` and any other server components call `supabase.auth.getUser()` and `redirect('/login')` if no session. This is the primary auth guard.
+- **`proxy.ts`:** Contains a Supabase SSR session helper and route matcher. Handles session cookie refresh and auth redirects.
 
 ### API route auth pattern
 
-Every API route:
+Every API route independently validates the session:
 ```typescript
 const { data: { user }, error } = await supabase.auth.getUser()
 if (error || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -399,26 +443,32 @@ if (error || !user) return NextResponse.json({ error: 'Unauthorized' }, { status
 
 ### RLS as the security boundary
 
-Even if API auth is bypassed, Supabase RLS ensures users can only read/write their own data. All queries run with the user's JWT (via the anon key + cookie session), not a service key, so RLS applies to every DB operation.
+All queries use the user's JWT (via the anon key + session cookie), not a service key, so RLS applies to every DB and Storage operation. Even a direct API call with a valid token can only access that user's own data.
+
+### Security headers
+
+Set globally via `next.config.js`:
+
+| Header | Value |
+|--------|-------|
+| `X-Frame-Options` | `SAMEORIGIN` |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-XSS-Protection` | `1; mode=block` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` |
 
 ---
 
 ## 7. File storage
 
-Two private Supabase Storage buckets:
+| Bucket | Visibility | Contents | Path pattern |
+|--------|-----------|----------|-------------|
+| `cv-uploads` | **Private** | Original uploaded PDFs | `{user_id}/cv-{timestamp}.pdf` |
+| `job-documents` | **Public** | Generated .docx CV + cover letter | `{user_id}/{timestamp}-cv.docx` / `-cover.docx` |
 
-| Bucket | Contents | Path pattern |
-|--------|----------|-------------|
-| `cv-uploads` | Original uploaded PDFs | `{user_id}/cv-{timestamp}.pdf` |
-| `job-documents` | Generated .docx CVs + cover letters | `{user_id}/{timestamp}-cv.docx` / `-cover.txt` |
+**`cv-uploads` is private** — files are accessed via a 1-year signed URL generated at upload time and stored in `user_profiles.cv_file_url`. This URL is for reference only; the raw text in `cv_raw_text` is what the pipeline actually uses.
 
-Files are namespaced by `user_id` as the first path segment, which the storage policies use to enforce ownership:
-
-```sql
-(auth.uid()::text = (storage.foldername(name))[1])
-```
-
-Public URLs are generated via `supabase.storage.from(bucket).getPublicUrl(path)` and stored in the database for direct access from the dashboard.
+**`job-documents` is public** — generated files must be downloadable directly from the dashboard without additional auth. Files are namespaced by `user_id` as the first path segment, enforced by storage policies.
 
 ---
 
@@ -426,31 +476,31 @@ Public URLs are generated via `supabase.storage.from(bucket).getPublicUrl(path)`
 
 ### `app/page.tsx` (Server Component)
 
-Fetches session, user profile, all job applications, and computes stats server-side. Passes data as props to `DashboardClient`. No client-side data fetching on initial load — instant render.
+Fetches the session, user profile, and all job applications in parallel. Passes `initialJobs` and `initialHasCv` to `DashboardClient`. Stats are not fetched from the DB — they are derived from the job list client-side.
 
 ### `DashboardClient.tsx` (Client Component)
 
-The main interactive UI. Manages:
-- Local job list state (updated optimistically after pipeline runs)
-- Filter (by status), search (company/role/location), sort (date/score/company)
-- `ProcessJobBar` — URL input, pipeline trigger, step-by-step progress display
-- `DetailPanel` — slide-in panel with fit score, strengths/gaps, CV download button, full CV preview (expandable), cover letter (copyable), notes
-- `StatusPill` — dropdown to change job status, calls `/api/update-status`
+The entire interactive UI. Key behaviours:
 
-After `processJob()` resolves, calls `router.refresh()` to re-fetch server data while also updating local state immediately for instant feedback.
-
-### `ApplyClient.tsx` (Client Component)
-
-Dedicated apply page for a single job. Shows:
-- Job header with fit score and status
-- **Download Tailored CV (.docx)** — primary action
-- Open job posting button
-- Full cover letter with copy button
-- "Mark as applied" button
+- **Live state** — jobs are added to the local array immediately after the pipeline returns (no page reload). The API returns the full job record on success so the row appears instantly.
+- **Client-side stats** — `computeStats(jobs)` derives all dashboard header numbers from the in-memory job array, keeping them reactive to status changes and deletions.
+- **CV section** — when no CV is uploaded, shows an inline upload form. When a CV is active, shows a compact "CV active · Replace" bar. No separate `/setup` route.
+- **StatusPill** — dropdown with click-outside-to-close. Calls `/api/update-status` on change and updates local state immediately.
+- **DetailPanel** — slide-in panel showing fit score, strengths/gaps, download buttons for CV + cover letter (.docx), copyable cover letter text, notes editor, and delete button.
+- **Pagination** — 20 jobs per page, with Prev/Next controls. Page resets to 0 when filter, search, or sort changes.
+- **Filter / search / sort** — filter by status pill; search by company, role, or location; sort by date / fit score / company name.
 
 ### `Navbar.tsx` (Client Component)
 
-Sticky top nav. Shows a warning badge if the user hasn't uploaded a CV yet (links to `/setup`).
+Sticky top nav. Shows the user's email and a sign-out button. CV upload status is handled by the dashboard, not the navbar.
+
+### `Toast.tsx`
+
+`ToastProvider` wraps the app root. `useToast()` returns a `toast(type, message)` function used by `DashboardClient` for success, error, and info messages. Toasts auto-dismiss after 4 seconds.
+
+### `ErrorBoundary.tsx`
+
+Class component wrapping the app root. Catches unexpected React render errors and shows a "Something went wrong / Try again" recovery UI instead of a blank screen.
 
 ---
 
@@ -460,11 +510,9 @@ Sticky top nav. Shows a warning badge if the user hasn't uploaded a CV yet (link
 |----------|----------|-------------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon/public key |
-| `ANTHROPIC_API_KEY` | Yes | Anthropic API key (server-side only) |
-| `NEXT_PUBLIC_APP_URL` | Yes | App base URL (e.g. `https://apply-ai.vercel.app`) |
-| `FIT_SCORE_THRESHOLD` | No | Minimum score to generate documents (default: `60`) |
-
-`ANTHROPIC_API_KEY` is server-only (no `NEXT_PUBLIC_` prefix) and never sent to the browser.
+| `ANTHROPIC_API_KEY` | Yes | Anthropic API key (server-side only, never sent to browser) |
+| `FIT_SCORE_THRESHOLD` | No | Minimum fit score to generate documents (default: `60`) |
+| `DAILY_JOB_LIMIT` | No | Max job analyses per user per day (default: `10`) |
 
 ---
 
@@ -475,11 +523,11 @@ Sticky top nav. Shows a warning badge if the user hasn't uploaded a CV yet (link
 npm install
 
 # Set up environment
-cp .env.local.example .env.local
-# Edit .env.local with your keys
+cp .env.example .env.local
+# Edit .env.local with your Supabase and Anthropic keys
 
-# Run Supabase schema
-# → paste supabase/schema.sql into Supabase SQL Editor
+# Run Supabase schema (one-time)
+# → paste supabase/schema.sql into Supabase SQL Editor → Run
 
 # Start dev server
 npm run dev
@@ -488,13 +536,25 @@ npm run dev
 
 ### Useful dev tips
 
-**Adjusting the fit threshold:** Set `FIT_SCORE_THRESHOLD=0` in `.env.local` during development to process every job regardless of score.
+**Disable fit threshold during development:**
+```env
+FIT_SCORE_THRESHOLD=0
+```
+Every job will be processed regardless of score.
 
-**Watching Claude responses:** Add `console.log(raw)` before `parseJson()` calls in `process-job/route.ts` to inspect raw Claude output.
+**Increase daily limit for testing:**
+```env
+DAILY_JOB_LIMIT=100
+```
 
-**Testing the pipeline without a real URL:** You can temporarily replace the `fetchJobText()` call with a hardcoded string to test the AI steps without needing a live job page.
+**Inspect raw Claude output:**
+Add `console.log(raw)` before any `parseJson()` call in `process-job/route.ts` to see exactly what Claude returns.
 
-**Supabase local dev:** You can run Supabase locally with `npx supabase start` if you have Docker. Update `NEXT_PUBLIC_SUPABASE_URL` to `http://localhost:54321`.
+**Test the pipeline without a real URL:**
+Temporarily replace the `fetchJobText()` call with a hardcoded job description string to test AI steps without a live page fetch.
+
+**Supabase local dev:**
+Run `npx supabase start` (requires Docker) and update `NEXT_PUBLIC_SUPABASE_URL` to `http://localhost:54321`.
 
 ---
 
@@ -504,86 +564,77 @@ npm run dev
 
 ```bash
 npm install -g vercel
-vercel         # follow prompts, auto-detects Next.js
+vercel
 ```
 
-In Vercel dashboard → Settings → Environment Variables, add all four variables. Set `NEXT_PUBLIC_APP_URL` to your Vercel deployment URL.
+Add all environment variables in Vercel dashboard → Settings → Environment Variables.
 
-Vercel's default function timeout is 10 seconds on the free plan — the pipeline may exceed this for slow job pages. **Upgrade to Vercel Pro** (or set `maxDuration` in route config) if you hit timeouts.
-
-To increase timeout on free plan, add to your API route:
+**Timeout:** The pipeline runs ~20–35 seconds. Vercel Hobby has a 10-second limit — **Vercel Pro ($20/month)** raises this to 60 seconds. Alternatively, add this to the route:
 
 ```typescript
-export const maxDuration = 30 // seconds — requires Vercel Pro for > 10s
+// app/api/process-job/route.ts
+export const maxDuration = 60 // requires Vercel Pro
 ```
 
 ### Alternative: Railway / Render
 
-Both support Next.js with longer timeouts on free tiers. Set environment variables in their dashboard and deploy via GitHub integration.
+Both support Next.js with longer timeouts on free tiers. Deploy via GitHub integration and set environment variables in their dashboards.
 
 ---
 
 ## 12. Cost model
 
 ### Supabase (free tier)
-- 500MB database
-- 1GB file storage
-- 50,000 monthly active users
-- More than sufficient for personal use and small teams
+- 500MB database, 1GB file storage, 50k MAU
+- Sufficient for personal use and small teams
 
 ### Anthropic API
-- ~$0.02–0.03 per job processed (4 Claude calls)
+- ~$0.02–0.03 per job fully processed (4 Claude calls)
+- ~$0.005 per skipped job (2 calls: extract + score)
 - ~$2–3 per 100 applications
-- Skipped jobs (below threshold) cost ~$0.005 (only 2 calls: extract + score)
 
-### Vercel (free tier)
-- 100GB bandwidth/month
-- 100 serverless function invocations/day limit on Hobby plan
-- For heavier use: Vercel Pro at $20/month
+### Jina AI Reader
+- Free, no usage limits documented for moderate use
+- No API key required
+
+### Vercel
+- Hobby: free, 10s function timeout (pipeline will hit this)
+- Pro: $20/month, 60s timeout
 
 ---
 
 ## 13. Roadmap
 
-### Phase 2 — Job Discovery (next sprint)
+### Phase 2 — Job Discovery
 
 Instead of manually pasting URLs, the app polls job boards on a schedule and feeds matching listings into the pipeline automatically.
 
-**Adzuna API** (free tier, covers NL/EU well):
+**Adzuna API** (free tier, covers NL/EU):
 ```
 GET https://api.adzuna.com/v1/api/jobs/nl/search/1
   ?app_id=YOUR_ID&app_key=YOUR_KEY
-  &what=product+manager
-  &where=amsterdam
-  &distance=20
-  &results_per_page=20
+  &what=product+manager&where=amsterdam
 ```
 
 **Implementation plan:**
-- Add `adzuna_app_id` + `adzuna_app_key` to user preferences
-- New API route: `POST /api/discover-jobs` — fetches listings, deduplicates against existing `job_url` records, feeds new ones into the pipeline
-- Cron job (Vercel Cron or Supabase Edge Functions) runs daily
-- Dashboard shows "Discovered today: 8 new jobs" banner
-
-**LinkedIn scraping note:** LinkedIn actively blocks non-browser fetches. Options:
-- Use [ProxyCurl API](https://nubela.co/proxycurl) (~$0.01/request) for LinkedIn job data
-- Use [Apify LinkedIn Jobs Scraper](https://apify.com/curious_coder/linkedin-jobs-scraper) (pay per run)
-- Unofficial: `linkedin-jobs-api` npm package (grey area, use at own risk)
+- Add Adzuna credentials to user preferences
+- New route: `POST /api/discover-jobs` — fetches listings, deduplicates, feeds new ones into the pipeline
+- Supabase Edge Function cron runs daily
+- Dashboard banner: "8 new jobs discovered today"
 
 ### Phase 3 — Interview prep
 
-When a job moves to `interviewing` status:
-- Claude generates a 1-page brief: likely questions, company culture notes, talking points connecting your background to their needs
-- Saved to a new `interview_briefs` table
-- Accessible from the apply panel
+When a job moves to `interviewing`:
+- Claude generates a 1-page brief: likely questions, company culture notes, talking points connecting the candidate's background to their needs
+- Stored in a new `interview_briefs` table, accessible from the detail panel
 
 ### Phase 4 — Profile preferences UI
 
-Currently `user_profiles.preferences` is a jsonb field set manually. Build a settings page:
-- Target salary range (min/max)
+Build a settings page for the `user_profiles.preferences` jsonb field:
+- Target salary range
 - Preferred work type (remote/hybrid/onsite)
 - Target locations
-- Deal-breakers (e.g. no relocation, no startups)
+- Deal-breakers (no relocation, no startups, etc.)
 - Minimum company size
 
 These preferences get injected into scoring and tailoring prompts for more accurate results.
@@ -591,23 +642,16 @@ These preferences get injected into scoring and tailoring prompts for more accur
 ### Phase 5 — Weekly digest email
 
 - Supabase Edge Function runs every Monday
-- Summarises the week: jobs processed, avg score, status updates
+- Summarises the week: jobs processed, avg score, status updates, top 3 recommendations
 - Sends via [Resend](https://resend.com) (free tier: 3,000 emails/month)
-- Includes a "top 3 jobs to apply to this week" recommendation
 
 ### Phase 6 — CV template upload
 
-Currently the `.docx` output is generated from scratch by the `docx` library using a fixed structure. Allow users to upload their own `.docx` template:
-- Parse the template structure
-- Inject tailored content into the right sections
-- Preserve their personal formatting, fonts, and layout
+Allow users to upload their own `.docx` template. Parse the template structure, inject tailored content into the right sections, preserve personal formatting and layout.
 
 ### Phase 7 — Multi-CV support
 
-Some users have different CV variants (e.g. one for product roles, one for consulting). Allow:
-- Uploading multiple named CV profiles
-- Selecting which CV to use when processing a job
-- Automatic selection based on role type
+Allow multiple named CV profiles (e.g. one for product roles, one for consulting). Select manually when processing a job, or auto-select based on role type.
 
 ---
 
@@ -617,33 +661,31 @@ Some users have different CV variants (e.g. one for product roles, one for consu
 
 | Site | Status | Notes |
 |------|--------|-------|
-| Indeed | ✅ Works | Good text extraction |
-| LinkedIn | ⚠️ Partial | Returns limited content without login session. Use the full job description URL (`/jobs/view/123456`), not the search results page |
-| Greenhouse | ✅ Works | Clean HTML |
-| Lever | ✅ Works | Clean HTML |
-| Ashby | ✅ Works | Clean HTML |
-| Workday | ⚠️ Partial | Heavy JS rendering — text extraction may be incomplete |
-| Company career pages | ✅ Usually works | Varies by site |
-
-**Workaround for difficult sites:** Copy-paste the job description text into a notes field and process from there (Phase 4 feature).
+| LinkedIn (public jobs) | ✅ Works | Jina renders the page correctly |
+| LinkedIn (login-required) | ❌ Auth wall | Returns login page — caught with clear error |
+| Indeed | ✅ Works | Clean extraction |
+| Greenhouse | ✅ Works | Clean extraction |
+| Lever | ✅ Works | Clean extraction |
+| Ashby | ✅ Works | Clean extraction |
+| Workday | ✅ Improved | Jina handles JS rendering |
+| Company career pages | ✅ Usually works | Varies; SPAs are handled by Jina |
+| Private ATS (SSO-gated) | ❌ Auth wall | No free solution; use a direct job URL instead |
 
 ### PDF parsing
 
-- `pdf-parse` works on text-based PDFs only
-- Scanned image PDFs (photographed CVs) return empty text and are rejected with a clear error message
-- Solution: export your CV from Word/Google Docs as PDF — these are always text-based
+- `pdf-parse` handles text-based PDFs only
+- Scanned image PDFs (photographed CVs) return empty text and are rejected with a clear error
+- Fix: export your CV from Word or Google Docs as PDF — always text-based
 
 ### Claude output reliability
 
-Claude is prompted to return strict JSON. Occasionally (~1–2% of calls) it may return malformed JSON or include unexpected content. The `parseJson()` helper strips markdown fences. If parsing fails, the API route returns a 500 error — simply retry the URL.
+Claude is prompted to return strict JSON. Occasionally (~1–2% of calls) it may return malformed JSON or include unexpected content. `parseJson()` strips markdown fences. If parsing fails, the route returns a 500 — retry the URL.
 
 ### Vercel free tier timeout
 
-The pipeline runs 4 sequential Claude API calls, each taking 3–8 seconds. Total pipeline time: ~20–35 seconds. Vercel Hobby plan has a **10-second function timeout** — this will cause failures. Options:
-- Upgrade to Vercel Pro ($20/month) for 60-second timeout
-- Deploy to Railway or Render (longer timeouts on free tiers)
-- Split the pipeline into a queue (Supabase Edge Functions + pg_cron) — Phase 2 architecture
+The pipeline runs 4 Claude calls (two in parallel after tailoring). Total time: ~20–35 seconds. Vercel Hobby times out at 10 seconds. Use Vercel Pro or deploy to Railway/Render.
 
 ### Rate limits
 
-Anthropic API: 50 requests/minute on Tier 1. At 4 calls per job, you can process ~12 jobs/minute before hitting rate limits. Unlikely to be an issue for personal use.
+- App-level: `DAILY_JOB_LIMIT` (default 10) analyses per user per day
+- Anthropic API: 50 requests/minute on Tier 1. At 4 calls per job, ~12 jobs/minute before hitting limits — unlikely for personal use
