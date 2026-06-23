@@ -337,7 +337,7 @@ Claude reads the raw text and returns structured JSON:
 
 ### Step 3 — Score fit
 
-Claude reads the candidate's `cv_raw_text` (first 3000 chars) and the job description, returns:
+Claude reads the candidate's `cv_raw_text` (first 6000 chars) via a **cached content block** and the job description, returns:
 
 ```typescript
 {
@@ -353,7 +353,7 @@ If `score < FIT_SCORE_THRESHOLD` (default 60), the job is saved as `skipped` and
 
 ### Step 4 — Tailor full CV
 
-Claude reads the full CV (first 4000 chars) and produces a complete restructured CV:
+Claude reads the full CV via the **same cached content block** from Step 3 — this call gets a guaranteed prompt cache hit (the CV was written to cache seconds ago, well within the 5-minute TTL). Produces a complete restructured CV:
 
 ```typescript
 {
@@ -370,6 +370,20 @@ Claude reads the full CV (first 4000 chars) and produces a complete restructured
 ```
 
 Instruction to Claude: *only highlight real experience, naturally reframed. Do not invent anything.*
+
+### Prompt caching
+
+Steps 3 and 4 both send the candidate's CV text as the first content block with `cache_control: { type: "ephemeral" }`. The block is **identical** in both calls — same CV slice (6000 chars), same format string.
+
+When Step 3 (`scoreJob`) executes, Anthropic writes a cache entry for that block. When Step 4 (`tailorCV`) executes seconds later with the same block as prefix, it gets a **cache read hit** — approximately 10× cheaper than uncached input tokens.
+
+| Scenario | Cache result |
+|----------|-------------|
+| `tailorCV` after `scoreJob` in the same pipeline | **Guaranteed hit** — within seconds |
+| Second job by same user within 5 min | Hit on both Step 3 and Step 4 |
+| Second job after 5 min have elapsed | Miss — new write, next call within 5 min hits |
+
+The 6000-char slice (~1500 tokens) is safely above Anthropic's 1024-token minimum for a cache write. CVs shorter than ~4000 chars may not reach the minimum; the API gracefully falls back to uncached input with no error.
 
 ### Step 5 — Build CV `.docx` & write cover letter (parallel)
 
@@ -411,15 +425,17 @@ One `INSERT` into `job_applications` stores all extracted data, scores, tailored
 
 ### Claude call summary
 
-| Step | Model | Max tokens | Approx cost |
-|------|-------|-----------|-------------|
-| Extract job | claude-sonnet-4-6 | 1200 | ~$0.003 |
-| Score fit | claude-sonnet-4-6 | 600 | ~$0.002 |
-| Tailor CV | claude-sonnet-4-6 | 2500 | ~$0.010 |
-| Cover letter | claude-sonnet-4-6 | 800 | ~$0.004 |
-| **Total per job** | | | **~$0.019–0.030** |
+| Step | Model | Max tokens | Caching | Approx cost |
+|------|-------|-----------|---------|-------------|
+| Extract job | claude-sonnet-4-6 | 1200 | — | ~$0.003 |
+| Score fit | claude-sonnet-4-6 | 600 | Cache **write** (CV block) | ~$0.003 |
+| Tailor CV | claude-sonnet-4-6 | 2500 | Cache **read** (CV block) | ~$0.005 |
+| Cover letter | claude-sonnet-4-6 | 800 | — | ~$0.004 |
+| **Total per job** | | | | **~$0.015–0.020** |
 
-Skipped jobs only run steps 2–3: ~$0.005.
+Skipped jobs only run extract + score: ~$0.006. The cache write on the score call costs 1.25× normal input for that block, but saves ~90% on the same block in the tailor call.
+
+For back-to-back jobs by the same user within 5 minutes, Steps 3 and 4 both get cache **reads** (not writes), reducing total cost further to ~$0.012–0.016 per job.
 
 ---
 

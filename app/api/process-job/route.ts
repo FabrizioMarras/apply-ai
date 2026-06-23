@@ -11,7 +11,10 @@ const ai = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const THRESHOLD   = parseInt(process.env.FIT_SCORE_THRESHOLD ?? '60')
 const DAILY_LIMIT = parseInt(process.env.DAILY_JOB_LIMIT ?? '10')
 
-// ── Claude helper ─────────────────────────────────────────────────────────────
+// ── Claude helpers ────────────────────────────────────────────────────────────
+
+type TextBlock = { type: 'text'; text: string }
+type CachedBlock = { type: 'text'; text: string; cache_control: { type: 'ephemeral' } }
 
 async function callClaude(prompt: string, maxTokens = 1000): Promise<string> {
   const msg = await ai.messages.create({
@@ -24,8 +27,41 @@ async function callClaude(prompt: string, maxTokens = 1000): Promise<string> {
   return block.text
 }
 
+// Sends a message with content blocks, supporting cache_control on individual blocks.
+// The first block with cache_control is written to Anthropic's prompt cache (5-min TTL).
+// Subsequent calls with the same cached block as prefix get a cache read hit (~10x cheaper).
+async function callClaudeWithBlocks(
+  blocks: Array<CachedBlock | TextBlock>,
+  maxTokens = 1000,
+): Promise<string> {
+  const msg = await ai.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: maxTokens,
+    // Cast required: cache_control may not be in older SDK type definitions,
+    // but is supported by the API and all recent SDK versions at runtime.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    messages: [{ role: 'user', content: blocks as any }],
+  })
+  const block = msg.content[0]
+  if (!block || block.type !== 'text') throw new Error('Unexpected response type from Claude')
+  return block.text
+}
+
 function parseJson<T>(raw: string): T {
   return JSON.parse(raw.replace(/```json|```/g, '').trim())
+}
+
+// CV block shared between scoreJob and tailorCV.
+// Using 6000 chars (~1500 tokens) — above Anthropic's 1024-token cache minimum.
+// scoreJob writes this block to cache; tailorCV reads it (guaranteed hit within
+// the same pipeline run). Back-to-back jobs from the same user also hit cache
+// for 5 minutes after the first run.
+function cvCacheBlock(cvText: string): CachedBlock {
+  return {
+    type: 'text',
+    text: `CANDIDATE CV:\n${cvText.slice(0, 6000)}`,
+    cache_control: { type: 'ephemeral' },
+  }
 }
 
 // ── Step 1: Fetch job page ────────────────────────────────────────────────────
@@ -76,7 +112,11 @@ ${rawText}
 // ── Step 3: Score fit ─────────────────────────────────────────────────────────
 
 async function scoreJob(job: Awaited<ReturnType<typeof extractJob>>, cvText: string) {
-  const raw = await callClaude(`
+  const raw = await callClaudeWithBlocks([
+    cvCacheBlock(cvText),
+    {
+      type: 'text',
+      text: `
 You are a career coach. Score how well this candidate matches the job.
 Return ONLY valid JSON, no markdown:
 {
@@ -87,13 +127,12 @@ Return ONLY valid JSON, no markdown:
   "recommendation": "apply|skip|stretch"
 }
 
-CANDIDATE CV:
-${cvText.slice(0, 3000)}
-
 JOB: ${job.company} — ${job.role}
 ${job.description.slice(0, 1500)}
 Required: ${job.required_skills.join(', ')}
-`, 600)
+`,
+    },
+  ], 600)
   return parseJson<{
     score: number; reason: string; strengths: string[]
     gaps: string[]; recommendation: string
@@ -107,7 +146,11 @@ async function tailorCV(
   fit: Awaited<ReturnType<typeof scoreJob>>,
   cvText: string,
 ) {
-  const raw = await callClaude(`
+  const raw = await callClaudeWithBlocks([
+    cvCacheBlock(cvText),  // cache hit: same block written by scoreJob moments ago
+    {
+      type: 'text',
+      text: `
 You are an expert CV writer. Produce a full tailored CV for this candidate targeting this specific role.
 Keep it honest — only highlight real experience, naturally reframed. Do not invent anything.
 
@@ -141,16 +184,15 @@ Return ONLY valid JSON, no markdown:
   "languages": ["English (fluent)", "Dutch (basic)"]
 }
 
-CANDIDATE CV TEXT:
-${cvText.slice(0, 4000)}
-
 TARGET ROLE: ${job.role} at ${job.company}
 Location: ${job.location}
 Key requirements: ${job.required_skills.join(', ')}
 Nice to have: ${job.nice_to_have?.join(', ') ?? 'n/a'}
 Candidate strengths to emphasise: ${fit.strengths.join(', ')}
 Gaps (acknowledge honestly if relevant): ${fit.gaps.join(', ')}
-`, 2500)
+`,
+    },
+  ], 2500)
 
   return parseJson<{
     full_name: string
