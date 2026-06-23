@@ -1,5 +1,10 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
+import {
+  CheckCircle2, Upload, FileText, Download, ExternalLink,
+  Copy, Check, Trash2, X, Search, Link2,
+  ChevronLeft, ChevronRight,
+} from 'lucide-react'
 import { JobApplication, JobStats, JobStatus, STATUS_META, scoreColor } from '@/lib/types'
 import { useToast } from '@/components/Toast'
 
@@ -32,10 +37,13 @@ function StatCard({ label, value, sub, accent }: {
   label: string; value: string | number; sub?: string; accent: string
 }) {
   return (
-    <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100" style={{ borderLeft: `4px solid ${accent}` }}>
-      <p className="text-xs font-bold uppercase tracking-widest text-slate mb-1">{label}</p>
-      <p className="text-3xl font-extrabold text-ink leading-none">{value ?? '—'}</p>
-      {sub && <p className="text-xs text-slate mt-1">{sub}</p>}
+    <div
+      className="bg-white dark:bg-gray-900 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-800"
+      style={{ borderLeft: `4px solid ${accent}` }}
+    >
+      <p className="text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-400 mb-1">{label}</p>
+      <p className="text-3xl font-extrabold text-ink dark:text-gray-50 leading-none">{value ?? '—'}</p>
+      {sub && <p className="text-xs text-slate dark:text-gray-500 mt-1">{sub}</p>}
     </div>
   )
 }
@@ -43,7 +51,9 @@ function StatCard({ label, value, sub, accent }: {
 // ── Score Badge ───────────────────────────────────────────────────────────────
 
 function ScoreBadge({ score }: { score: number | null }) {
-  if (score === null) return <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 text-xs">—</div>
+  if (score === null) return (
+    <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-400 dark:text-gray-600 text-xs">—</div>
+  )
   const c = scoreColor(score)
   return (
     <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm"
@@ -77,7 +87,7 @@ function StatusPill({ status, onChange }: { status: JobStatus; onChange: (s: Job
         {m.label} ▾
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 bg-white rounded-xl shadow-xl border border-gray-100 p-1.5 min-w-40">
+        <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-gray-100 dark:border-gray-800 p-1.5 min-w-40">
           {(Object.keys(STATUS_META) as JobStatus[]).map(k => (
             <button key={k} onClick={() => { onChange(k); setOpen(false) }}
               className="block w-full text-left px-3 py-2 rounded-lg text-xs font-bold hover:opacity-80"
@@ -95,7 +105,7 @@ function StatusPill({ status, onChange }: { status: JobStatus; onChange: (s: Job
 
 function CvSection({ hasCv, onUploaded }: { hasCv: boolean; onUploaded: () => void }) {
   const { toast } = useToast()
-  const [file, setFile]         = useState<File | null>(null)
+  const [file, setFile]           = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [replacing, setReplacing] = useState(!hasCv)
 
@@ -124,9 +134,10 @@ function CvSection({ hasCv, onUploaded }: { hasCv: boolean; onUploaded: () => vo
 
   if (hasCv && !replacing) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-3 mb-6 flex items-center gap-3">
-        <span className="text-emerge font-bold text-sm">✓ CV active</span>
-        <span className="text-xs text-slate flex-1">Your CV is ready for job analysis.</span>
+      <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm px-5 py-3 mb-6 flex items-center gap-3">
+        <CheckCircle2 size={16} className="text-emerge shrink-0" />
+        <span className="text-emerge font-bold text-sm">CV active</span>
+        <span className="text-xs text-slate dark:text-gray-400 flex-1">Your CV is ready for job analysis.</span>
         <button
           onClick={() => setReplacing(true)}
           className="text-xs font-semibold text-brand hover:underline"
@@ -138,26 +149,34 @@ function CvSection({ hasCv, onUploaded }: { hasCv: boolean; onUploaded: () => vo
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-6">
+    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm p-5 mb-6">
       <div className="flex items-center justify-between mb-4">
-        <p className="text-xs font-bold uppercase tracking-widest text-slate">
+        <p className="text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-400">
           {hasCv ? 'Replace your CV' : 'Upload your CV to get started'}
         </p>
         {hasCv && (
           <button onClick={() => { setReplacing(false); setFile(null) }}
-            className="text-xs text-slate hover:text-ink">
+            className="text-xs text-slate dark:text-gray-500 hover:text-ink dark:hover:text-white">
             Cancel
           </button>
         )}
       </div>
       <div className="flex items-center gap-3">
         <label className={`flex-1 flex items-center gap-3 border-2 border-dashed rounded-xl px-4 py-3 cursor-pointer transition-all
-          ${file ? 'border-emerge bg-green-50' : 'border-gray-200 hover:border-brand'}`}>
+          ${file
+            ? 'border-emerge bg-green-50 dark:bg-green-950/30'
+            : 'border-gray-200 dark:border-gray-700 hover:border-brand'}`}>
           <input type="file" accept=".pdf" className="hidden" onChange={e => setFile(e.target.files?.[0] ?? null)} />
-          <span className="text-lg">{file ? '📄' : '☁️'}</span>
+          {file
+            ? <FileText size={18} className="text-emerge shrink-0" />
+            : <Upload size={18} className="text-gray-300 dark:text-gray-600 shrink-0" />}
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-ink truncate">{file ? file.name : 'Choose PDF'}</p>
-            <p className="text-xs text-slate">{file ? `${(file.size / 1024).toFixed(0)} KB` : 'PDF only, max 10 MB'}</p>
+            <p className="text-sm font-semibold text-ink dark:text-gray-100 truncate">
+              {file ? file.name : 'Choose PDF'}
+            </p>
+            <p className="text-xs text-slate dark:text-gray-400">
+              {file ? `${(file.size / 1024).toFixed(0)} KB` : 'PDF only, max 10 MB'}
+            </p>
           </div>
         </label>
         <button
@@ -226,121 +245,159 @@ function DetailPanel({ job, onClose, onStatusChange, onDelete }: {
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
-      <div className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-white shadow-2xl z-50 flex flex-col overflow-y-auto">
-        <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-start sticky top-0 bg-white">
+      <div className="fixed inset-0 bg-black/30 dark:bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-white dark:bg-gray-900 shadow-2xl z-50 flex flex-col overflow-y-auto">
+
+        {/* Header */}
+        <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-start sticky top-0 bg-white dark:bg-gray-900">
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-slate mb-1">{job.company}</p>
-            <h2 className="text-xl font-bold text-ink">{job.role}</h2>
-            <p className="text-sm text-slate mt-0.5">{job.location} · {job.work_type}</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-400 mb-1">{job.company}</p>
+            <h2 className="text-xl font-bold text-ink dark:text-gray-50">{job.role}</h2>
+            <p className="text-sm text-slate dark:text-gray-400 mt-0.5">{job.location} · {job.work_type}</p>
           </div>
-          <button onClick={onClose} className="text-slate hover:text-ink text-2xl leading-none font-light ml-4">×</button>
+          <button onClick={onClose} className="text-slate dark:text-gray-400 hover:text-ink dark:hover:text-white ml-4 mt-0.5">
+            <X size={20} />
+          </button>
         </div>
 
         <div className="px-6 py-5 flex flex-col gap-5 flex-1">
+
+          {/* Score + Status */}
           <div className="flex items-center gap-4">
             <ScoreBadge score={job.fit_score} />
             <div>
-              <p className="text-sm font-semibold text-ink">Fit Score</p>
-              <p className="text-xs text-slate">{job.salary ?? 'Salary not listed'}</p>
+              <p className="text-sm font-semibold text-ink dark:text-gray-100">Fit Score</p>
+              <p className="text-xs text-slate dark:text-gray-400">{job.salary ?? 'Salary not listed'}</p>
             </div>
             <div className="ml-auto">
               <StatusPill status={job.status} onChange={s => onStatusChange(job.id, s)} />
             </div>
           </div>
 
+          {/* Fit reason */}
           {job.fit_reason && (
-            <p className="text-sm text-slate bg-gray-50 rounded-xl p-4 leading-relaxed">{job.fit_reason}</p>
+            <p className="text-sm text-slate dark:text-gray-300 bg-gray-50 dark:bg-gray-800 rounded-xl p-4 leading-relaxed">
+              {job.fit_reason}
+            </p>
           )}
 
+          {/* Strengths */}
           {strengths.length > 0 && (
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-emerge mb-2">Your strengths</p>
               <div className="flex flex-wrap gap-2">
-                {strengths.map(s => <span key={s} className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-green-50 text-green-800">{s}</span>)}
+                {strengths.map(s => (
+                  <span key={s} className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-green-50 dark:bg-green-950/50 text-green-800 dark:text-green-300">{s}</span>
+                ))}
               </div>
             </div>
           )}
 
+          {/* Gaps */}
           {gaps.length > 0 && (
             <div>
               <p className="text-xs font-bold uppercase tracking-widest text-danger mb-2">Gaps to address</p>
               <div className="flex flex-wrap gap-2">
-                {gaps.map(g => <span key={g} className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-red-50 text-red-800">{g}</span>)}
+                {gaps.map(g => (
+                  <span key={g} className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-950/50 text-red-800 dark:text-red-300">{g}</span>
+                ))}
               </div>
             </div>
           )}
 
+          {/* Downloads */}
           <div className="flex gap-2">
             {job.cv_file_url ? (
               <a href={job.cv_file_url} target="_blank" rel="noreferrer"
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-brand text-white rounded-xl font-bold text-xs hover:bg-indigo-700">
-                ⬇ Download Tailored CV (.docx)
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand text-white rounded-xl font-bold text-xs hover:bg-indigo-700 transition-colors">
+                <Download size={13} />
+                Tailored CV (.docx)
               </a>
             ) : (
-              <div className="flex-1 flex items-center justify-center py-2.5 bg-gray-100 text-gray-400 rounded-xl text-xs font-semibold">
+              <div className="flex-1 flex items-center justify-center py-2.5 bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 rounded-xl text-xs font-semibold">
                 No CV generated
               </div>
             )}
             {job.cover_letter_url && (
               <a href={job.cover_letter_url} target="_blank" rel="noreferrer"
-                className="px-4 py-2.5 bg-gray-100 text-slate rounded-xl font-semibold text-xs hover:bg-gray-200">
-                ⬇ Cover Letter (.docx)
+                className="flex items-center gap-2 px-4 py-2.5 bg-gray-100 dark:bg-gray-800 text-slate dark:text-gray-300 rounded-xl font-semibold text-xs hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                <Download size={13} />
+                Cover Letter
               </a>
             )}
           </div>
 
+          {/* Summary preview */}
           {job.tailored_summary && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-bold uppercase tracking-widest text-slate">Summary preview</p>
-                <button onClick={() => copy(job.tailored_summary!, 'summary')}
-                  className="text-xs text-brand font-semibold hover:underline">
-                  {copied === 'summary' ? '✓ Copied!' : 'Copy'}
+                <p className="text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-400">Summary preview</p>
+                <button
+                  onClick={() => copy(job.tailored_summary!, 'summary')}
+                  className="flex items-center gap-1 text-xs text-brand font-semibold hover:underline"
+                >
+                  {copied === 'summary' ? <Check size={11} /> : <Copy size={11} />}
+                  {copied === 'summary' ? 'Copied!' : 'Copy'}
                 </button>
               </div>
-              <p className="text-sm text-ink bg-gray-50 rounded-xl p-4 leading-relaxed">{job.tailored_summary}</p>
+              <p className="text-sm text-ink dark:text-gray-200 bg-gray-50 dark:bg-gray-800 rounded-xl p-4 leading-relaxed">
+                {job.tailored_summary}
+              </p>
             </div>
           )}
 
+          {/* Cover letter */}
           {job.cover_letter_text && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-bold uppercase tracking-widest text-slate">Cover letter</p>
-                <button onClick={() => copy(job.cover_letter_text!, 'letter')}
-                  className="text-xs text-brand font-semibold hover:underline">
-                  {copied === 'letter' ? '✓ Copied!' : 'Copy'}
+                <p className="text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-400">Cover letter</p>
+                <button
+                  onClick={() => copy(job.cover_letter_text!, 'letter')}
+                  className="flex items-center gap-1 text-xs text-brand font-semibold hover:underline"
+                >
+                  {copied === 'letter' ? <Check size={11} /> : <Copy size={11} />}
+                  {copied === 'letter' ? 'Copied!' : 'Copy'}
                 </button>
               </div>
-              <pre className="text-sm text-ink bg-gray-50 rounded-xl p-4 leading-relaxed whitespace-pre-wrap font-sans">{job.cover_letter_text}</pre>
+              <pre className="text-sm text-ink dark:text-gray-200 bg-gray-50 dark:bg-gray-800 rounded-xl p-4 leading-relaxed whitespace-pre-wrap font-sans">
+                {job.cover_letter_text}
+              </pre>
             </div>
           )}
 
+          {/* Open posting */}
           <a href={job.job_url} target="_blank" rel="noreferrer"
-            className="block text-center py-3 bg-ink text-white rounded-xl font-bold text-sm hover:bg-gray-800">
-            → Open job posting & apply
+            className="flex items-center justify-center gap-2 py-3 bg-ink dark:bg-gray-800 text-white rounded-xl font-bold text-sm hover:bg-gray-800 dark:hover:bg-gray-700 transition-colors">
+            <ExternalLink size={14} />
+            Open job posting & apply
           </a>
 
+          {/* Notes */}
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-slate mb-2">Notes</p>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)}
+            <p className="text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-400 mb-2">Notes</p>
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
               placeholder="Add notes about this application…"
-              className="w-full min-h-24 p-3 rounded-xl border border-gray-200 text-sm resize-y focus:border-brand outline-none" />
+              className="w-full min-h-24 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-ink dark:text-gray-100 placeholder:text-gray-300 dark:placeholder:text-gray-600 resize-y focus:border-brand outline-none"
+            />
             <button onClick={saveNotes} disabled={saving}
               className="mt-2 text-xs font-semibold text-brand hover:underline disabled:opacity-50">
               {saving ? 'Saving…' : 'Save notes'}
             </button>
           </div>
 
-          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-            <p className="text-xs text-gray-300">
+          {/* Footer: date + delete */}
+          <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-800">
+            <p className="text-xs text-gray-300 dark:text-gray-600">
               Added {new Date(job.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
             </p>
             <button
               onClick={handleDelete}
               disabled={deleting}
-              className="text-xs font-semibold text-danger hover:underline disabled:opacity-50"
+              className="flex items-center gap-1.5 text-xs font-semibold text-danger hover:underline disabled:opacity-50"
             >
+              <Trash2 size={12} />
               {deleting ? 'Deleting…' : 'Delete'}
             </button>
           </div>
@@ -390,23 +447,26 @@ function ProcessJobBar({ hasCv, onJobAdded }: {
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
-      <p className="text-xs font-bold uppercase tracking-widest text-slate mb-3">Process a new job</p>
+    <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 p-5 mb-6">
+      <p className="text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-400 mb-3">Process a new job</p>
       {!hasCv ? (
-        <div className="text-sm text-warn bg-amber-50 rounded-xl p-4">
+        <div className="text-sm text-warn bg-amber-50 dark:bg-amber-950/40 rounded-xl p-4">
           Upload your CV above before analysing jobs.
         </div>
       ) : (
         <>
           <div className="flex gap-3">
-            <input
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && process()}
-              placeholder="Paste a LinkedIn, Indeed, or any job URL…"
-              className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:border-brand outline-none"
-              disabled={loading}
-            />
+            <div className="relative flex-1">
+              <Link2 size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-300 dark:text-gray-600 pointer-events-none" />
+              <input
+                value={url}
+                onChange={e => setUrl(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && process()}
+                placeholder="Paste a LinkedIn, Indeed, or any job URL…"
+                className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-ink dark:text-gray-100 placeholder:text-gray-300 dark:placeholder:text-gray-600 focus:border-brand outline-none"
+                disabled={loading}
+              />
+            </div>
             <button
               onClick={process}
               disabled={loading || !url.trim()}
@@ -424,7 +484,7 @@ function ProcessJobBar({ hasCv, onJobAdded }: {
             </button>
           </div>
           {loading && (
-            <p className="text-xs text-slate mt-3 animate-pulse">
+            <p className="text-xs text-slate dark:text-gray-500 mt-3 animate-pulse">
               Fetching job → scoring your fit → tailoring CV → writing cover letter…
             </p>
           )}
@@ -447,7 +507,6 @@ export default function DashboardClient({
   const [sortBy, setSort]       = useState<'date' | 'score' | 'company'>('date')
   const [page, setPage]         = useState(0)
 
-  // Reset to first page when filters change
   useEffect(() => { setPage(0) }, [filter, search, sortBy])
 
   const stats = computeStats(jobs)
@@ -483,11 +542,13 @@ export default function DashboardClient({
   const displayed  = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   const wtBg = (wt: string | null) =>
-    wt === 'remote' ? 'bg-green-50 text-green-800' :
-    wt === 'hybrid' ? 'bg-blue-50 text-blue-800'   : 'bg-gray-100 text-gray-600'
+    wt === 'remote' ? 'bg-green-50 dark:bg-green-950/50 text-green-800 dark:text-green-300' :
+    wt === 'hybrid' ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300' :
+    'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
 
   return (
     <main className="max-w-6xl mx-auto px-6 py-8">
+
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <StatCard label="Processed"      value={stats.total}                                                              sub={`${stats.skipped} skipped`}           accent="#6366f1" />
@@ -505,12 +566,15 @@ export default function DashboardClient({
 
       {/* Filters */}
       <div className="flex gap-3 mb-4 flex-wrap items-center">
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search…"
-          className="px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none focus:border-brand w-44"
-        />
+        <div className="relative">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-600 pointer-events-none" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search…"
+            className="pl-8 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-ink dark:text-gray-100 placeholder:text-gray-300 dark:placeholder:text-gray-600 outline-none focus:border-brand w-44"
+          />
+        </div>
         <div className="flex gap-2 flex-wrap">
           {(['all', ...Object.keys(STATUS_META)] as (JobStatus | 'all')[]).map(s => {
             const m = s !== 'all' ? STATUS_META[s as JobStatus] : null
@@ -519,7 +583,7 @@ export default function DashboardClient({
                 className="px-3 py-1.5 rounded-full text-xs font-bold border transition-all"
                 style={filter === s
                   ? { background: m?.bg ?? '#ede9fe', color: m?.color ?? '#6366f1', borderColor: m?.color ?? '#6366f1' }
-                  : { background: '#fff', color: '#6b7280', borderColor: '#e5e7eb' }}>
+                  : { background: 'transparent', color: '#6b7280', borderColor: '#e5e7eb' }}>
                 {s === 'all' ? 'All' : m!.label}
               </button>
             )
@@ -528,7 +592,11 @@ export default function DashboardClient({
         <div className="ml-auto flex gap-2">
           {(['date', 'score', 'company'] as const).map(s => (
             <button key={s} onClick={() => setSort(s)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${sortBy === s ? 'bg-indigo-50 text-brand border-brand' : 'bg-white text-slate border-gray-200'}`}>
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                sortBy === s
+                  ? 'bg-indigo-50 dark:bg-indigo-950/50 text-brand border-brand'
+                  : 'bg-white dark:bg-gray-900 text-slate dark:text-gray-400 border-gray-200 dark:border-gray-700'
+              }`}>
               {s.charAt(0).toUpperCase() + s.slice(1)}
             </button>
           ))}
@@ -536,14 +604,14 @@ export default function DashboardClient({
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
         <div className="grid gap-0" style={{ gridTemplateColumns: '52px 1.5fr 1fr 100px 72px 140px' }}>
           {['Score', 'Company / Role', 'Location', 'Type', 'Date', 'Status'].map(h => (
-            <div key={h} className="px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate border-b border-gray-100">{h}</div>
+            <div key={h} className="px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-500 border-b border-gray-100 dark:border-gray-800">{h}</div>
           ))}
 
           {displayed.length === 0 && (
-            <div className="col-span-6 py-16 text-center text-slate text-sm">
+            <div className="col-span-6 py-16 text-center text-slate dark:text-gray-500 text-sm">
               {jobs.length === 0
                 ? 'No applications yet. Paste a job URL above to get started.'
                 : 'No applications match your filters.'}
@@ -553,21 +621,21 @@ export default function DashboardClient({
           {displayed.map(job => (
             <div key={job.id} onClick={() => setSelected(job)} className="contents group cursor-pointer">
               {[
-                <div key="score" className="px-3 py-4 flex items-center border-b border-gray-50 group-hover:bg-gray-50/80">
+                <div key="score" className="px-3 py-4 flex items-center border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
                   <ScoreBadge score={job.fit_score} />
                 </div>,
-                <div key="company" className="px-4 py-4 border-b border-gray-50 group-hover:bg-gray-50/80">
-                  <p className="font-semibold text-ink text-sm">{job.company}</p>
-                  <p className="text-xs text-slate mt-0.5">{job.role}</p>
+                <div key="company" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
+                  <p className="font-semibold text-ink dark:text-gray-100 text-sm">{job.company}</p>
+                  <p className="text-xs text-slate dark:text-gray-400 mt-0.5">{job.role}</p>
                 </div>,
-                <div key="loc" className="px-4 py-4 border-b border-gray-50 text-sm text-slate group-hover:bg-gray-50/80">{job.location}</div>,
-                <div key="type" className="px-4 py-4 border-b border-gray-50 group-hover:bg-gray-50/80">
+                <div key="loc" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 text-sm text-slate dark:text-gray-400 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">{job.location}</div>,
+                <div key="type" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
                   <span className={`text-xs font-semibold px-2 py-1 rounded-md capitalize ${wtBg(job.work_type)}`}>{job.work_type}</span>
                 </div>,
-                <div key="date" className="px-4 py-4 border-b border-gray-50 text-xs text-slate group-hover:bg-gray-50/80">
+                <div key="date" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 text-xs text-slate dark:text-gray-400 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
                   {new Date(job.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
                 </div>,
-                <div key="status" className="px-4 py-4 border-b border-gray-50 group-hover:bg-gray-50/80" onClick={e => e.stopPropagation()}>
+                <div key="status" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40" onClick={e => e.stopPropagation()}>
                   <StatusPill status={job.status} onChange={s => updateStatus(job.id, s)} />
                 </div>,
               ]}
@@ -578,29 +646,29 @@ export default function DashboardClient({
 
       {/* Pagination */}
       <div className="flex items-center justify-between mt-4">
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-gray-400 dark:text-gray-600">
           {filtered.length === 0
             ? '0 applications'
             : `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, filtered.length)} of ${filtered.length}`}
         </p>
         {totalPages > 1 && (
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setPage(p => Math.max(0, p - 1))}
               disabled={page === 0}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold border bg-white text-slate border-gray-200 disabled:opacity-40"
+              className="p-1.5 rounded-lg border bg-white dark:bg-gray-900 text-slate dark:text-gray-400 border-gray-200 dark:border-gray-700 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
             >
-              ← Prev
+              <ChevronLeft size={14} />
             </button>
-            <span className="px-3 py-1.5 text-xs text-slate">
+            <span className="px-2 text-xs text-slate dark:text-gray-400">
               {page + 1} / {totalPages}
             </span>
             <button
               onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
               disabled={page >= totalPages - 1}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold border bg-white text-slate border-gray-200 disabled:opacity-40"
+              className="p-1.5 rounded-lg border bg-white dark:bg-gray-900 text-slate dark:text-gray-400 border-gray-200 dark:border-gray-700 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
             >
-              Next →
+              <ChevronRight size={14} />
             </button>
           </div>
         )}

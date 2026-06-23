@@ -11,10 +11,23 @@ export const metadata: Metadata = {
   description: 'AI-powered job application pipeline',
 }
 
+// Runs before hydration to prevent flash of wrong theme
+const themeScript = `
+  try {
+    var t = localStorage.getItem('theme');
+    if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    }
+  } catch(e) {}
+`
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className={`${inter.className} bg-mist min-h-screen`}>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
+      <body className={`${inter.className} bg-mist dark:bg-gray-950 min-h-screen transition-colors duration-200`}>
         <ErrorBoundary>
           <ToastProvider>
             {children}

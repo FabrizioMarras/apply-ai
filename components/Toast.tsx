@@ -27,7 +27,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const colorMap: Record<ToastType, string> = {
     success: 'bg-emerge text-white',
     error:   'bg-danger text-white',
-    info:    'bg-ink text-white',
+    info:    'bg-gray-700 text-white',
   }
 
   return (
