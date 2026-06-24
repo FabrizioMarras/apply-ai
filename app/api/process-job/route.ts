@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import Anthropic from '@anthropic-ai/sdk'
 import {
-  Document, Packer, Paragraph, TextRun, HeadingLevel,
-  AlignmentType, BorderStyle, Table, TableRow, TableCell,
-  WidthType, ShadingType,
+  Document, Packer, Paragraph, TextRun,
+  AlignmentType, BorderStyle,
 } from 'docx'
 
 const ai = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -256,7 +255,7 @@ async function buildCvDocx(
     spacing: { after: 60 },
   })
 
-  const children: (Paragraph | Table)[] = []
+  const children: Paragraph[] = []
 
   children.push(new Paragraph({
     children: [new TextRun({ text: tailored.full_name || 'Your Name', bold: true, size: 52, color: DARK, font: 'Calibri' })],
@@ -285,36 +284,13 @@ async function buildCvDocx(
 
   if (tailored.skills_to_highlight?.length) {
     children.push(sectionHeading('Key Skills'))
-    const half = Math.ceil(tailored.skills_to_highlight.length / 2)
-    const col1 = tailored.skills_to_highlight.slice(0, half)
-    const col2 = tailored.skills_to_highlight.slice(half)
-    const maxRows = Math.max(col1.length, col2.length)
-    // docx uses OOXML pct units: 1/50th of a percent, so 50% = 2500, 100% = 5000
-    const noBorder = { style: BorderStyle.NONE, size: 0, color: 'auto' } as const
-    const cellBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder }
-    const cellWidth   = { size: 2500, type: WidthType.PERCENTAGE }
-    const rows = Array.from({ length: maxRows }, (_, i) =>
-      new TableRow({
-        children: [
-          new TableCell({
-            children: [new Paragraph({ children: [new TextRun({ text: col1[i] ? `▪  ${col1[i]}` : '', size: 19, font: 'Calibri', color: DARK })] })],
-            width: cellWidth,
-            borders: cellBorders,
-          }),
-          new TableCell({
-            children: [new Paragraph({ children: [new TextRun({ text: col2[i] ? `▪  ${col2[i]}` : '', size: 19, font: 'Calibri', color: DARK })] })],
-            width: cellWidth,
-            borders: cellBorders,
-          }),
-        ],
-      })
-    )
-    children.push(new Table({
-      rows,
-      width: { size: 5000, type: WidthType.PERCENTAGE },
-      borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
-    }))
-    children.push(new Paragraph({ children: [], spacing: { after: 120 } }))
+    for (const skill of tailored.skills_to_highlight) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: `▪  ${skill}`, size: 19, font: 'Calibri', color: DARK })],
+        spacing: { after: 60 },
+      }))
+    }
+    children.push(new Paragraph({ children: [], spacing: { after: 80 } }))
   }
 
   if (tailored.experience?.length) {

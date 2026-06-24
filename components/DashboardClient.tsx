@@ -642,7 +642,7 @@ export default function DashboardClient({
                   <span className={`text-xs font-semibold px-2 py-1 rounded-md capitalize ${wtBg(job.work_type)}`}>{job.work_type}</span>
                 </div>,
                 <div key="date" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 text-xs text-slate dark:text-gray-400 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
-                  {new Date(job.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                  {new Date(job.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                 </div>,
                 <div key="status" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40" onClick={e => e.stopPropagation()}>
                   <StatusPill status={job.status} onChange={s => updateStatus(job.id, s)} />
