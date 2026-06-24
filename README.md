@@ -157,6 +157,50 @@ Skipped jobs (below fit threshold) cost ~$0.006 — only extract and score steps
 
 ---
 
+## Using a different AI provider
+
+The project uses **Anthropic Claude Sonnet 4.6** via the `@anthropic-ai/sdk` package. All AI calls live in a single file — [`app/api/process-job/route.ts`](./app/api/process-job/route.ts) — so switching provider is a contained change.
+
+### Switching to OpenAI (GPT-4o, etc.)
+
+1. Replace the SDK:
+   ```bash
+   npm remove @anthropic-ai/sdk
+   npm install openai
+   ```
+2. In `route.ts`, replace the client initialisation (top of file):
+   ```ts
+   // Before
+   import Anthropic from '@anthropic-ai/sdk';
+   const ai = new Anthropic();
+
+   // After
+   import OpenAI from 'openai';
+   const ai = new OpenAI(); // reads OPENAI_API_KEY from env
+   ```
+3. Rewrite `callClaude()` and `callClaudeWithBlocks()` to use `ai.chat.completions.create()`. Remove the `cache_control` blocks inside `callClaudeWithBlocks` — they are Anthropic-specific and have no OpenAI equivalent.
+4. Update `.env.local`: replace `ANTHROPIC_API_KEY` with `OPENAI_API_KEY`.
+
+### Switching to a local model (Ollama, LM Studio, llama.cpp)
+
+Local model servers expose an **OpenAI-compatible API**, so the same steps above apply — plus one extra: point the client at your local endpoint instead of the cloud.
+
+```ts
+import OpenAI from 'openai';
+const ai = new OpenAI({
+  baseURL: 'http://localhost:11434/v1', // Ollama default; adjust for LM Studio or llama.cpp
+  apiKey: 'ollama',                     // any non-empty string works for local servers
+});
+```
+
+Then update the model name in `callClaude()` and `callClaudeWithBlocks()` to match whatever model you have pulled locally (e.g. `llama3.1:70b`, `mistral:7b`).
+
+> **Note on quality:** The four pipeline tasks (job extraction, fit scoring, CV rewriting, cover letter) rely on reliable structured JSON output. Models with 30B+ parameters generally handle this well; smaller models may produce malformed JSON. If you see parse errors, try a larger model or add stricter output instructions to the prompts.
+
+> **Note on prompt caching:** The `callClaudeWithBlocks()` function uses Anthropic's prompt caching to reduce cost when the same CV is reused across the scoring and tailoring steps. This feature does not exist in OpenAI or local model APIs — simply remove the `cache_control` fields and use `callClaude()` for all four steps instead.
+
+---
+
 ## Keeping Supabase active (free tier)
 
 Supabase free-tier projects **pause after 7 days of inactivity**, which causes database errors for anyone who doesn't use the app regularly.
