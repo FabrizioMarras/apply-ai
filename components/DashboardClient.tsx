@@ -415,21 +415,25 @@ function ProcessJobBar({ hasCv, onJobAdded, onDuplicate }: {
   onDuplicate: (job: JobApplication) => void
 }) {
   const { toast } = useToast()
-  const [url, setUrl]         = useState('')
-  const [loading, setLoading] = useState(false)
+  const [url, setUrl]           = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [progress, setProgress] = useState('')
 
   async function process() {
     const trimmed = url.trim()
     if (!trimmed || loading) return
     setLoading(true)
+    setProgress('Starting…')
     try {
-      const res  = await fetch('/api/process-job', {
+      const res = await fetch('/api/process-job', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobUrl: trimmed }),
       })
-      const data = await res.json()
-      if (!res.ok) {
+
+      // Early checks (auth, rate-limit, dedup, bad URL) return plain JSON
+      if (!res.headers.get('content-type')?.includes('text/event-stream')) {
+        const data = await res.json()
         if (res.status === 409 && data.job) {
           toast('info', 'Already in your dashboard — opening it now.')
           onDuplicate(data.job as JobApplication)
@@ -437,19 +441,46 @@ function ProcessJobBar({ hasCv, onJobAdded, onDuplicate }: {
         } else {
           toast('error', data.error ?? 'Something went wrong')
         }
-      } else if (data.skipped) {
-        toast('info', `Fit score ${data.score}/100 — not a strong match. Saved as skipped. Click the row to see why.`)
-        if (data.job) onJobAdded(data.job as JobApplication)
-        setUrl('')
-      } else {
-        toast('success', `${data.role} at ${data.company} — score ${data.score}/100. CV & cover letter ready.`)
-        if (data.job) onJobAdded(data.job as JobApplication)
-        setUrl('')
+        return
+      }
+
+      // SSE stream — pipeline is running
+      const reader  = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const event = JSON.parse(line.slice(6)) as Record<string, unknown>
+            if (event.type === 'progress') {
+              setProgress(event.message as string)
+            } else if (event.type === 'result') {
+              toast('success', `${event.role} at ${event.company} — score ${event.score}/100. CV & cover letter ready.`)
+              if (event.job) onJobAdded(event.job as JobApplication)
+              setUrl('')
+            } else if (event.type === 'skipped') {
+              toast('info', `Fit score ${event.score}/100 — not a strong match. Saved as skipped. Click the row to see why.`)
+              if (event.job) onJobAdded(event.job as JobApplication)
+              setUrl('')
+            } else if (event.type === 'error') {
+              toast('error', (event.message as string) ?? 'Something went wrong')
+            }
+          } catch { /* malformed SSE line */ }
+        }
       }
     } catch {
       toast('error', 'Request failed. Please check your connection.')
     } finally {
       setLoading(false)
+      setProgress('')
     }
   }
 
@@ -490,9 +521,9 @@ function ProcessJobBar({ hasCv, onJobAdded, onDuplicate }: {
               ) : 'Analyse job'}
             </button>
           </div>
-          {loading && (
+          {loading && progress && (
             <p className="text-xs text-slate dark:text-gray-500 mt-3 animate-pulse">
-              Fetching job → scoring your fit → tailoring CV → writing cover letter…
+              {progress}
             </p>
           )}
         </>

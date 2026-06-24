@@ -64,8 +64,9 @@ function cvCacheBlock(cvText: string): CachedBlock {
 }
 
 // ── Step 1: Fetch job page ────────────────────────────────────────────────────
-// Uses Jina AI Reader (r.jina.ai) to extract clean text from any URL,
-// including JavaScript-rendered job boards like LinkedIn, Greenhouse, Lever.
+// Fetches job page text. Tries a direct browser-like fetch first (works for most
+// static job boards: Greenhouse, Lever, Ashby, Workable, company career pages).
+// Falls back to Jina AI Reader for JS-rendered pages (e.g. LinkedIn).
 
 // Known tracking-only query parameters that are safe to drop before fetching.
 // Job identity is always in the URL path on major boards (LinkedIn, Greenhouse,
@@ -91,16 +92,95 @@ function cleanJobUrl(raw: string): string {
   return u.toString()
 }
 
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+}
+
+function stripHtmlTags(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Extracts a JobPosting from schema.org JSON-LD embedded in raw HTML.
+// Most major job boards (LinkedIn, Indeed, Greenhouse, Lever, Ashby) include
+// this for SEO — it's structured and clean, better than scraped HTML text.
+function extractJsonLd(html: string): string | null {
+  const scriptRe = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+  let match
+  while ((match = scriptRe.exec(html)) !== null) {
+    try {
+      const data = JSON.parse(match[1])
+      const items: unknown[] = Array.isArray(data['@graph']) ? data['@graph'] : [data]
+      for (const item of items) {
+        if ((item as Record<string, unknown>)['@type'] !== 'JobPosting') continue
+        const j = item as Record<string, unknown>
+        const org   = (j.hiringOrganization as Record<string, unknown> | undefined)
+        const loc   = (j.jobLocation      as Record<string, unknown> | undefined)
+        const addr  = (loc?.address       as Record<string, unknown> | undefined)
+        const title       = String(j.title            ?? '')
+        const company     = String(org?.name          ?? '')
+        const city        = String(addr?.addressLocality ?? '')
+        const country     = String(addr?.addressCountry  ?? '')
+        const employment  = String(j.employmentType   ?? '')
+        const description = stripHtmlTags(String(j.description ?? ''))
+        const parts = [
+          title       && `Job Title: ${title}`,
+          company     && `Company: ${company}`,
+          (city || country) && `Location: ${[city, country].filter(Boolean).join(', ')}`,
+          employment  && `Employment Type: ${employment}`,
+          description && `\nJob Description:\n${description}`,
+        ].filter(Boolean)
+        const text = parts.join('\n')
+        if (text.length >= 200) return text
+      }
+    } catch { /* malformed JSON — skip */ }
+  }
+  return null
+}
+
+async function fetchDirect(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(15000) })
+    if (!res.ok) return null
+    const html = await res.text()
+    // Prefer JSON-LD (structured) over raw HTML text when available
+    const jsonLd = extractJsonLd(html)
+    if (jsonLd) return jsonLd
+    // Fall back to stripping HTML tags
+    const text = stripHtmlTags(html)
+    return text.length >= 300 ? text : null
+  } catch {
+    return null
+  }
+}
+
+async function fetchViaJina(url: string): Promise<string | null> {
+  try {
+    const headers: Record<string, string> = { Accept: 'text/plain' }
+    if (process.env.JINA_API_KEY) headers['Authorization'] = `Bearer ${process.env.JINA_API_KEY}`
+    const res = await fetch(`https://r.jina.ai/${url}`, { headers, signal: AbortSignal.timeout(25000) })
+    if (!res.ok) return null
+    const text = (await res.text()).trim()
+    return text.length >= 300 ? text : null
+  } catch {
+    return null
+  }
+}
+
 async function fetchJobText(url: string): Promise<string> {
   const fetchUrl = cleanJobUrl(url)
-  const res = await fetch(`https://r.jina.ai/${fetchUrl}`, {
-    headers: { Accept: 'text/plain' },
-    signal: AbortSignal.timeout(25000),
-  })
-  if (!res.ok) throw new Error(`Could not fetch job page (${res.status}). Check the URL is publicly accessible.`)
-  const text = (await res.text()).trim()
-  if (text.length < 200) {
-    throw new Error('Job page returned too little content. The URL may require a login or the page may be empty.')
+  const text = (await fetchDirect(fetchUrl)) ?? (await fetchViaJina(fetchUrl))
+  if (!text) {
+    throw new Error(
+      'Could not retrieve this job page. It may require a login, be JavaScript-rendered, or the URL may be incorrect.'
+    )
   }
   return text.slice(0, 8000)
 }
@@ -156,7 +236,7 @@ ${job.description.slice(0, 1500)}
 Required: ${job.required_skills.join(', ')}
 `,
     },
-  ], 600)
+  ], 1200)
   return parseJson<{
     score: number; reason: string; strengths: string[]
     gaps: string[]; recommendation: string
@@ -528,110 +608,125 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  try {
-    const rawText = await fetchJobText(jobUrl)
-    const job     = await extractJob(rawText)
+  // All pre-flight checks passed — stream pipeline progress via SSE
+  const encoder = new TextEncoder()
+  const xform   = new TransformStream<Uint8Array, Uint8Array>()
+  const writer  = xform.writable.getWriter()
 
-    // Guard: require at minimum a recognisable role AND company.
-    // The previous AND-only check was too lenient — a LinkedIn login page
-    // returns the job title in <title>, so Claude could extract a role while
-    // company and skills are both empty/unknown, letting garbage content
-    // through to the full pipeline.
-    const hasRole    = job.role    && job.role    !== 'unknown'
-    const hasCompany = job.company && job.company !== 'unknown'
-    const hasSkills  = job.required_skills.length > 0
-    const hasDesc    = (job.description ?? '').split(/\s+/).length >= 80
+  const emit = (event: object) =>
+    writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
 
-    if (!(hasRole && hasCompany) && !hasSkills || !hasDesc) {
-      const isLinkedIn = parsedUrl.hostname.includes('linkedin.com')
-      return NextResponse.json({
-        error: isLinkedIn
-          ? 'Could not read this LinkedIn page — it likely requires a sign-in. Try opening the job in an incognito window first to confirm it\'s public, or use the company\'s own careers page instead.'
-          : 'Could not extract enough job details from this URL. The page may require a login or may not be a job posting.',
-      }, { status: 422 })
-    }
+  ;(async () => {
+    try {
+      emit({ type: 'progress', message: 'Fetching job page…' })
+      const rawText = await fetchJobText(jobUrl)
 
-    const fit = await scoreJob(job, profile.cv_raw_text)
+      emit({ type: 'progress', message: 'Extracting job details…' })
+      const job = await extractJob(rawText)
 
-    const baseRecord = {
-      user_id:         user.id,
-      job_url:         jobUrl,
-      company:         job.company,
-      role:            job.role,
-      location:        job.location,
-      work_type:       job.work_type,
-      salary:          job.salary,
-      seniority:       job.seniority,
-      job_description: job.description,
-      fit_score:       fit.score,
-      fit_reason:      fit.reason,
-      strengths:       fit.strengths,
-      gaps:            fit.gaps,
-      recommendation:  fit.recommendation,
-    }
+      const hasRole    = job.role    && job.role    !== 'unknown'
+      const hasCompany = job.company && job.company !== 'unknown'
+      const hasSkills  = job.required_skills.length > 0
+      const hasDesc    = (job.description ?? '').split(/\s+/).length >= 80
 
-    if (fit.score < THRESHOLD) {
-      const { data } = await supabase
+      if ((!(hasRole && hasCompany) && !hasSkills) || !hasDesc) {
+        const isLinkedIn = parsedUrl.hostname.includes('linkedin.com')
+        emit({
+          type: 'error',
+          status: 422,
+          message: isLinkedIn
+            ? 'Could not read this LinkedIn page — it likely requires a sign-in. Try opening the job in an incognito window first to confirm it\'s public, or use the company\'s own careers page instead.'
+            : 'Could not extract enough job details from this URL. The page may require a login or may not be a job posting.',
+        })
+        return
+      }
+
+      emit({ type: 'progress', message: 'Scoring your fit…' })
+      const fit = await scoreJob(job, profile.cv_raw_text)
+
+      const baseRecord = {
+        user_id:         user.id,
+        job_url:         jobUrl,
+        company:         job.company,
+        role:            job.role,
+        location:        job.location,
+        work_type:       job.work_type,
+        salary:          job.salary,
+        seniority:       job.seniority,
+        job_description: job.description,
+        fit_score:       fit.score,
+        fit_reason:      fit.reason,
+        strengths:       fit.strengths,
+        gaps:            fit.gaps,
+        recommendation:  fit.recommendation,
+      }
+
+      if (fit.score < THRESHOLD) {
+        const { data } = await supabase
+          .from('job_applications')
+          .insert({ ...baseRecord, status: 'skipped' })
+          .select('*')
+          .single()
+        emit({ type: 'skipped', score: fit.score, reason: fit.reason, job: data })
+        return
+      }
+
+      emit({ type: 'progress', message: 'Tailoring your CV…' })
+      const tailored = await tailorCV(job, fit, profile.cv_raw_text)
+
+      emit({ type: 'progress', message: 'Writing cover letter…' })
+      const [cvBuffer, coverLetterText] = await Promise.all([
+        buildCvDocx(tailored, job),
+        writeCoverLetter(job, fit, tailored.professional_summary),
+      ])
+      const coverLetterBuffer = await buildCoverLetterDocx(coverLetterText, tailored, job)
+
+      emit({ type: 'progress', message: 'Saving documents…' })
+      const ts   = Date.now()
+      const slug = `${user.id}/${ts}`
+
+      await supabase.storage.from('job-documents').upload(`${slug}-cv.docx`, cvBuffer, {
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        upsert: false,
+      })
+      const { data: cvUrlData } = supabase.storage.from('job-documents').getPublicUrl(`${slug}-cv.docx`)
+
+      await supabase.storage.from('job-documents').upload(`${slug}-cover.docx`, coverLetterBuffer, {
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        upsert: false,
+      })
+      const { data: coverUrlData } = supabase.storage.from('job-documents').getPublicUrl(`${slug}-cover.docx`)
+
+      const { data: record } = await supabase
         .from('job_applications')
-        .insert({ ...baseRecord, status: 'skipped' })
+        .insert({
+          ...baseRecord,
+          tailored_summary:  tailored.professional_summary,
+          tailored_bullets:  tailored.experience,
+          tailored_skills:   tailored.skills_to_highlight,
+          cover_letter_text: coverLetterText,
+          cover_letter_url:  coverUrlData?.publicUrl ?? null,
+          cv_file_url:       cvUrlData?.publicUrl ?? null,
+          status: 'new',
+        })
         .select('*')
         .single()
-      return NextResponse.json({ skipped: true, score: fit.score, reason: fit.reason, job: data })
+
+      emit({ type: 'result', score: fit.score, company: job.company, role: job.role, recommendation: fit.recommendation, job: record })
+
+    } catch (err: unknown) {
+      console.error('Pipeline error:', err)
+      emit({ type: 'error', message: err instanceof Error ? err.message : 'Pipeline failed' })
+    } finally {
+      writer.close()
     }
+  })()
 
-    const tailored = await tailorCV(job, fit, profile.cv_raw_text)
-
-    // Build CV docx and write cover letter text in parallel
-    const [cvBuffer, coverLetterText] = await Promise.all([
-      buildCvDocx(tailored, job),
-      writeCoverLetter(job, fit, tailored.professional_summary),
-    ])
-
-    // Build formatted cover letter docx from the generated text
-    const coverLetterBuffer = await buildCoverLetterDocx(coverLetterText, tailored, job)
-
-    const ts   = Date.now()
-    const slug = `${user.id}/${ts}`
-
-    await supabase.storage.from('job-documents').upload(`${slug}-cv.docx`, cvBuffer, {
-      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      upsert: false,
-    })
-    const { data: cvUrlData } = supabase.storage.from('job-documents').getPublicUrl(`${slug}-cv.docx`)
-
-    await supabase.storage.from('job-documents').upload(`${slug}-cover.docx`, coverLetterBuffer, {
-      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      upsert: false,
-    })
-    const { data: coverUrlData } = supabase.storage.from('job-documents').getPublicUrl(`${slug}-cover.docx`)
-
-    const { data: record } = await supabase
-      .from('job_applications')
-      .insert({
-        ...baseRecord,
-        tailored_summary:  tailored.professional_summary,
-        tailored_bullets:  tailored.experience,
-        tailored_skills:   tailored.skills_to_highlight,
-        cover_letter_text: coverLetterText,
-        cover_letter_url:  coverUrlData?.publicUrl ?? null,
-        cv_file_url:       cvUrlData?.publicUrl ?? null,
-        status: 'new',
-      })
-      .select('*')
-      .single()
-
-    return NextResponse.json({
-      skipped:        false,
-      score:          fit.score,
-      company:        job.company,
-      role:           job.role,
-      recommendation: fit.recommendation,
-      job:            record,
-    })
-
-  } catch (err: unknown) {
-    console.error('Pipeline error:', err)
-    const message = err instanceof Error ? err.message : 'Pipeline failed'
-    return NextResponse.json({ error: message }, { status: 500 })
-  }
+  return new Response(xform.readable, {
+    headers: {
+      'Content-Type':    'text/event-stream',
+      'Cache-Control':   'no-cache, no-transform',
+      'X-Accel-Buffering': 'no',
+    },
+  })
 }
