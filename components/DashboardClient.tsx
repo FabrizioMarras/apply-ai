@@ -13,21 +13,25 @@ const PAGE_SIZE = 20
 // ── Stats ─────────────────────────────────────────────────────────────────────
 
 function computeStats(jobs: JobApplication[]): JobStats {
-  const withScore = jobs.filter(j => j.status !== 'skipped' && j.fit_score !== null)
-  const avgScore  = withScore.length > 0
+  const skipped      = jobs.filter(j => j.status === 'skipped').length
+  const processed    = jobs.length - skipped   // jobs where documents were generated
+  const interviewing = jobs.filter(j => j.status === 'interviewing').length
+  const offers       = jobs.filter(j => j.status === 'offer').length
+  const withScore    = jobs.filter(j => j.status !== 'skipped' && j.fit_score !== null)
+  const avgScore     = withScore.length > 0
     ? Math.round(withScore.reduce((s, j) => s + (j.fit_score ?? 0), 0) / withScore.length * 10) / 10
     : null
-  const applied      = jobs.filter(j => j.status === 'applied').length
-  const interviewing = jobs.filter(j => j.status === 'interviewing').length
   return {
     total:              jobs.length,
-    applied,
+    processed,
+    applied:            jobs.filter(j => j.status === 'applied').length,
     interviewing,
-    offers:             jobs.filter(j => j.status === 'offer').length,
+    offers,
     rejected:           jobs.filter(j => j.status === 'rejected').length,
-    skipped:            jobs.filter(j => j.status === 'skipped').length,
+    skipped,
     avg_fit_score:      avgScore,
-    interview_rate_pct: applied > 0 ? Math.round(100 * interviewing / applied * 10) / 10 : null,
+    // % of processed jobs that reached interview stage or beyond
+    interview_rate_pct: processed > 0 ? Math.round((interviewing + offers) / processed * 100) : null,
   }
 }
 
@@ -65,29 +69,48 @@ function ScoreBadge({ score }: { score: number | null }) {
 
 function StatusPill({ status, onChange }: { status: JobStatus; onChange: (s: JobStatus) => void }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos]   = useState({ top: 0, left: 0 })
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const btnRef  = useRef<HTMLButtonElement>(null)
   const m = STATUS_META[status]
 
   useEffect(() => {
     if (!open) return
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [open])
 
+  function toggle(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      const dropdownW = 160 // min-w-40
+      const left = r.left + dropdownW > window.innerWidth
+        ? Math.max(0, r.right - dropdownW)
+        : r.left
+      setPos({ top: r.bottom + 4, left })
+    }
+    setOpen(o => !o)
+  }
+
   return (
-    <div ref={ref} className="relative">
+    <div ref={wrapRef} className="relative">
       <button
-        onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
+        ref={btnRef}
+        onClick={toggle}
         className="rounded-full px-3 py-1 text-xs font-bold cursor-pointer border-0"
         style={{ background: m.bg, color: m.color }}
       >
         {m.label} ▾
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-gray-100 dark:border-gray-800 p-1.5 min-w-40">
+        <div
+          className="fixed z-[200] bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-gray-100 dark:border-gray-800 p-1.5 min-w-40"
+          style={{ top: pos.top, left: pos.left }}
+        >
           {(Object.keys(STATUS_META) as JobStatus[]).map(k => (
             <button key={k} onClick={() => { onChange(k); setOpen(false) }}
               className="block w-full text-left px-3 py-2 rounded-lg text-xs font-bold hover:opacity-80"
@@ -203,7 +226,8 @@ function DetailPanel({ job, onClose, onStatusChange, onDelete }: {
   const [copied, setCopied]     = useState<'summary' | 'letter' | null>(null)
   const [notes, setNotes]       = useState(job.notes ?? '')
   const [saving, setSaving]     = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  const [deleting, setDeleting]           = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   async function saveNotes() {
     setSaving(true)
@@ -217,7 +241,6 @@ function DetailPanel({ job, onClose, onStatusChange, onDelete }: {
   }
 
   async function handleDelete() {
-    if (!confirm('Delete this application? This cannot be undone.')) return
     setDeleting(true)
     const res = await fetch('/api/delete-job', {
       method: 'DELETE',
@@ -231,6 +254,7 @@ function DetailPanel({ job, onClose, onStatusChange, onDelete }: {
     } else {
       toast('error', 'Delete failed. Please try again.')
       setDeleting(false)
+      setConfirmDelete(false)
     }
   }
 
@@ -390,16 +414,35 @@ function DetailPanel({ job, onClose, onStatusChange, onDelete }: {
           {/* Footer: date + delete */}
           <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-gray-800">
             <p className="text-xs text-gray-300 dark:text-gray-600">
-              Added {new Date(job.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+              Added {new Date(job.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
             </p>
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="flex items-center gap-1.5 text-xs font-semibold text-danger hover:underline disabled:opacity-50"
-            >
-              <Trash2 size={12} />
-              {deleting ? 'Deleting…' : 'Delete'}
-            </button>
+            {confirmDelete ? (
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate dark:text-gray-400">Are you sure?</span>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="text-xs font-semibold text-slate dark:text-gray-400 hover:text-ink dark:hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex items-center gap-1.5 text-xs font-bold text-white bg-danger px-2.5 py-1 rounded-lg disabled:opacity-50"
+                >
+                  <Trash2 size={11} />
+                  {deleting ? 'Deleting…' : 'Delete'}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-slate dark:text-gray-500 hover:text-danger dark:hover:text-danger transition-colors"
+              >
+                <Trash2 size={12} />
+                Delete
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -587,15 +630,15 @@ export default function DashboardClient({
     'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
 
   return (
-    <main className="max-w-6xl mx-auto px-6 py-8">
+    <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Processed"      value={stats.total}                                                              sub={`${stats.skipped} skipped`}           accent="#6366f1" />
+        <StatCard label="Processed"      value={stats.processed}                                                          sub={`${stats.skipped} skipped`}           accent="#6366f1" />
         <StatCard label="Applied"        value={stats.applied}                                                            sub={`${stats.interviewing} interviewing`} accent="#0ea5e9" />
         <StatCard label="Avg Fit Score"  value={stats.avg_fit_score ?? '—'}                                               sub="out of 100"                           accent="#f59e0b" />
-        <StatCard label="Interview Rate" value={stats.interview_rate_pct ? `${stats.interview_rate_pct}%` : '—'}
-          sub={stats.offers > 0 ? `${stats.offers} offer${stats.offers > 1 ? 's' : ''}` : 'no offers yet'}               accent="#10b981" />
+        <StatCard label="Interview Rate" value={stats.interview_rate_pct != null ? `${stats.interview_rate_pct}%` : '—'}
+          sub={stats.offers > 0 ? `${stats.offers} offer${stats.offers > 1 ? 's' : ''}` : `${stats.interviewing} interviewing`} accent="#10b981" />
       </div>
 
       {/* CV section */}
@@ -605,22 +648,40 @@ export default function DashboardClient({
       <ProcessJobBar hasCv={hasCv} onJobAdded={addJob} onDuplicate={j => setSelected(j)} />
 
       {/* Filters */}
-      <div className="flex gap-3 mb-4 flex-wrap items-center">
-        <div className="relative">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-600 pointer-events-none" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search…"
-            className="pl-8 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-ink dark:text-gray-100 placeholder:text-gray-300 dark:placeholder:text-gray-600 outline-none focus:border-brand w-44"
-          />
+      <div className="mb-4 flex flex-col gap-2">
+
+        {/* Row 1: search (stretches) + sort buttons */}
+        <div className="flex gap-2 items-center">
+          <div className="relative flex-1">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-600 pointer-events-none" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search…"
+              className="pl-8 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-ink dark:text-gray-100 placeholder:text-gray-300 dark:placeholder:text-gray-600 outline-none focus:border-brand w-full"
+            />
+          </div>
+          <div className="flex gap-1.5 shrink-0">
+            {(['date', 'score', 'company'] as const).map(s => (
+              <button key={s} onClick={() => setSort(s)}
+                className={`px-3 py-2 rounded-lg text-xs font-bold border transition-colors ${
+                  sortBy === s
+                    ? 'bg-indigo-50 dark:bg-indigo-950/50 text-brand border-brand'
+                    : 'bg-white dark:bg-gray-900 text-slate dark:text-gray-400 border-gray-200 dark:border-gray-700'
+                }`}>
+                {s.charAt(0).toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex gap-2 flex-wrap">
+
+        {/* Row 2: status pills — scrolls horizontally on mobile, wraps on desktop */}
+        <div className="flex gap-1.5 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap pb-0.5 sm:pb-0 [&::-webkit-scrollbar]:hidden">
           {(['all', ...Object.keys(STATUS_META)] as (JobStatus | 'all')[]).map(s => {
             const m = s !== 'all' ? STATUS_META[s as JobStatus] : null
             return (
               <button key={s} onClick={() => setFilter(s)}
-                className="px-3 py-1.5 rounded-full text-xs font-bold border transition-all"
+                className="shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border transition-all"
                 style={filter === s
                   ? { background: m?.bg ?? '#ede9fe', color: m?.color ?? '#6366f1', borderColor: m?.color ?? '#6366f1' }
                   : { background: 'transparent', color: '#6b7280', borderColor: '#e5e7eb' }}>
@@ -629,60 +690,90 @@ export default function DashboardClient({
             )
           })}
         </div>
-        <div className="ml-auto flex gap-2">
-          {(['date', 'score', 'company'] as const).map(s => (
-            <button key={s} onClick={() => setSort(s)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                sortBy === s
-                  ? 'bg-indigo-50 dark:bg-indigo-950/50 text-brand border-brand'
-                  : 'bg-white dark:bg-gray-900 text-slate dark:text-gray-400 border-gray-200 dark:border-gray-700'
-              }`}>
-              {s.charAt(0).toUpperCase() + s.slice(1)}
-            </button>
-          ))}
-        </div>
+
       </div>
 
-      {/* Table */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
-        <div className="grid gap-0" style={{ gridTemplateColumns: '52px 1.5fr 1fr 100px 72px 140px' }}>
-          {['Score', 'Company / Role', 'Location', 'Type', 'Date', 'Status'].map(h => (
-            <div key={h} className="px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-500 border-b border-gray-100 dark:border-gray-800">{h}</div>
-          ))}
+      {/* Empty state */}
+      {displayed.length === 0 && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 py-16 text-center text-slate dark:text-gray-500 text-sm">
+          {jobs.length === 0
+            ? 'No applications yet. Paste a job URL above to get started.'
+            : 'No applications match your filters.'}
+        </div>
+      )}
 
-          {displayed.length === 0 && (
-            <div className="col-span-6 py-16 text-center text-slate dark:text-gray-500 text-sm">
-              {jobs.length === 0
-                ? 'No applications yet. Paste a job URL above to get started.'
-                : 'No applications match your filters.'}
-            </div>
-          )}
+      {/* Table — desktop (md+) */}
+      {displayed.length > 0 && (
+        <div className="hidden md:block bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
+          <div className="grid gap-0" style={{ gridTemplateColumns: '52px 1.5fr 1fr 100px 72px 140px' }}>
+            {['Score', 'Company / Role', 'Location', 'Type', 'Date', 'Status'].map(h => (
+              <div key={h} className="px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-500 border-b border-gray-100 dark:border-gray-800">{h}</div>
+            ))}
+            {displayed.map(job => (
+              <div key={job.id} onClick={() => setSelected(job)} className="contents group cursor-pointer">
+                {[
+                  <div key="score" className="px-3 py-4 flex items-center border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
+                    <ScoreBadge score={job.fit_score} />
+                  </div>,
+                  <div key="company" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
+                    <p className="font-semibold text-ink dark:text-gray-100 text-sm">{job.company}</p>
+                    <p className="text-xs text-slate dark:text-gray-400 mt-0.5">{job.role}</p>
+                  </div>,
+                  <div key="loc" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 text-sm text-slate dark:text-gray-400 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">{job.location}</div>,
+                  <div key="type" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
+                    <span className={`text-xs font-semibold px-2 py-1 rounded-md capitalize ${wtBg(job.work_type)}`}>{job.work_type}</span>
+                  </div>,
+                  <div key="date" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 text-xs text-slate dark:text-gray-400 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
+                    {new Date(job.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                  </div>,
+                  <div key="status" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40" onClick={e => e.stopPropagation()}>
+                    <StatusPill status={job.status} onChange={s => updateStatus(job.id, s)} />
+                  </div>,
+                ]}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
+      {/* Cards — mobile (< md) */}
+      {displayed.length > 0 && (
+        <div className="md:hidden bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden divide-y divide-gray-50 dark:divide-gray-800">
           {displayed.map(job => (
-            <div key={job.id} onClick={() => setSelected(job)} className="contents group cursor-pointer">
-              {[
-                <div key="score" className="px-3 py-4 flex items-center border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
-                  <ScoreBadge score={job.fit_score} />
-                </div>,
-                <div key="company" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
-                  <p className="font-semibold text-ink dark:text-gray-100 text-sm">{job.company}</p>
-                  <p className="text-xs text-slate dark:text-gray-400 mt-0.5">{job.role}</p>
-                </div>,
-                <div key="loc" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 text-sm text-slate dark:text-gray-400 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">{job.location}</div>,
-                <div key="type" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
-                  <span className={`text-xs font-semibold px-2 py-1 rounded-md capitalize ${wtBg(job.work_type)}`}>{job.work_type}</span>
-                </div>,
-                <div key="date" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 text-xs text-slate dark:text-gray-400 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
-                  {new Date(job.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                </div>,
-                <div key="status" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40" onClick={e => e.stopPropagation()}>
-                  <StatusPill status={job.status} onChange={s => updateStatus(job.id, s)} />
-                </div>,
-              ]}
+            <div
+              key={job.id}
+              onClick={() => setSelected(job)}
+              className="flex items-start gap-3 px-4 py-3.5 cursor-pointer hover:bg-gray-50/80 dark:hover:bg-gray-800/40 active:bg-gray-100 dark:active:bg-gray-800 transition-colors"
+            >
+              <div className="pt-0.5 shrink-0">
+                <ScoreBadge score={job.fit_score} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm text-ink dark:text-gray-100 truncate">{job.company}</p>
+                    <p className="text-xs text-slate dark:text-gray-400 truncate">{job.role}</p>
+                  </div>
+                  <div className="shrink-0" onClick={e => e.stopPropagation()}>
+                    <StatusPill status={job.status} onChange={s => updateStatus(job.id, s)} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  {job.location && (
+                    <span className="text-xs text-slate dark:text-gray-500 truncate max-w-[140px]">{job.location}</span>
+                  )}
+                  {job.work_type && job.work_type !== 'unknown' && (
+                    <span className={`text-xs font-semibold px-1.5 py-0.5 rounded capitalize ${wtBg(job.work_type)}`}>{job.work_type}</span>
+                  )}
+                  <span className="text-xs text-slate dark:text-gray-500">
+                    {new Date(job.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                  </span>
+                </div>
+              </div>
             </div>
           ))}
         </div>
-      </div>
+      )}
 
       {/* Pagination */}
       <div className="flex items-center justify-between mt-4">

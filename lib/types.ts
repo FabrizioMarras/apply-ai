@@ -46,6 +46,7 @@ export interface UserProfile {
 
 export interface JobStats {
   total: number
+  processed: number
   applied: number
   interviewing: number
   offers: number
