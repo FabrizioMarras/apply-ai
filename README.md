@@ -15,16 +15,21 @@
 ```
 You paste a job URL
         ↓
-Jina AI Reader fetches the page (handles SPAs: LinkedIn, Greenhouse, Lever, Workday…)
+Three-tier fetch (no rate limits on tiers 1–2):
+  1. Direct fetch → JSON-LD structured data (LinkedIn, Greenhouse, Lever, Ashby, Indeed…)
+  2. Direct fetch → HTML text strip (static career pages)
+  3. Jina AI Reader fallback (JS-rendered pages)
+        ↓
+Real-time progress shown in the UI as each step completes
         ↓
 Claude extracts job details (role, company, skills, seniority, salary…)
         ↓
-Claude scores your fit (0–100) against your uploaded CV
+Claude scores your fit (0–100) against your uploaded CV  [prompt cache write]
         ↓
 Score ≥ threshold?
   NO  → logged as "skipped", no documents generated, no further AI calls
   YES ↓
-Claude rewrites your full CV for this specific role
+Claude rewrites your full CV for this specific role       [prompt cache read — ~10× cheaper]
 Claude writes a tailored cover letter (company-specific hook, 3 paragraphs, ≤320 words)
 A formatted .docx CV is built and saved
 A formatted .docx cover letter is built and saved
@@ -105,7 +110,7 @@ Open [http://localhost:3000](http://localhost:3000)
 1. **Sign up** with your email
 2. **Upload your CV** (PDF) directly from the dashboard — text is extracted and saved once
 3. **Paste any job URL** in the "Process a new job" bar (LinkedIn, Indeed, Greenhouse, company careers pages, etc.)
-4. Wait ~20–30 seconds for the pipeline to run
+4. Watch the live progress — each pipeline step updates in real time (~20–60 seconds total)
 5. **Click the job row** → download your tailored CV (.docx), download cover letter (.docx), copy cover letter text, open the posting
 
 ---
@@ -127,11 +132,11 @@ In your Vercel dashboard → Settings → Environment Variables → add all vari
 |------|------|
 | Supabase | Free (500MB DB, 1GB storage) |
 | Vercel | Free (upgrade to Pro ~$20/mo for timeout) |
-| Jina AI Reader | Free (no API key needed) |
-| Claude API | ~$0.02–0.03 per job processed |
-| **100 applications** | **~$2–3 total** |
+| Jina AI Reader | Free — used only as fallback for JS-rendered pages |
+| Claude API | ~$0.015–0.020 per job processed (prompt caching saves ~30%) |
+| **100 applications** | **~$1.50–2.00 total** |
 
-Skipped jobs (below fit threshold) cost ~$0.005 — only the extract and score steps run.
+Skipped jobs (below fit threshold) cost ~$0.006 — only extract and score steps run.
 
 ---
 
@@ -141,11 +146,13 @@ Skipped jobs (below fit threshold) cost ~$0.005 — only the extract and score s
 |-------|-----------|
 | Framework | Next.js App Router (TypeScript) |
 | Auth + DB + Storage | Supabase |
-| AI | Anthropic Claude Sonnet 4.6 |
-| Job page fetching | Jina AI Reader (r.jina.ai) |
+| AI | Anthropic Claude Sonnet 4.6 (with prompt caching) |
+| Job page fetching | Direct fetch + JSON-LD → HTML strip → Jina AI fallback |
 | PDF parsing | pdf-parse (server-side) |
 | Document generation | docx (Node.js) — CV + cover letter |
-| Styling | Tailwind CSS |
+| Icons | lucide-react |
+| Styling | Tailwind CSS (dark mode via `class` strategy) |
+| Progress streaming | Server-Sent Events (SSE) |
 | Deploy | Vercel / Railway / Render |
 
 ---

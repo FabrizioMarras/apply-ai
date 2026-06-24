@@ -1,6 +1,6 @@
 # ApplyAI — Technical Documentation
 
-> Last updated: June 2026 | Version: 0.2.0
+> Last updated: June 2026 | Version: 0.3.0
 
 ---
 
@@ -31,26 +31,30 @@ ApplyAI is a **Next.js App Router** application. All AI calls and data operation
 ┌─────────────────────────────────────────────────────────┐
 │                     Browser (React)                      │
 │   Login → Dashboard (CV upload + job processor + table) │
+│   SSE stream reader — shows live pipeline progress       │
 └───────────────────────┬─────────────────────────────────┘
-                        │  HTTP (fetch)
+                        │  HTTP / SSE
 ┌───────────────────────▼─────────────────────────────────┐
 │              Next.js API Routes (Server)                 │
 │                                                          │
 │  POST   /api/upload-cv      ← PDF parsing (pdf-parse)   │
-│  POST   /api/process-job    ← Full AI pipeline           │
-│  PATCH  /api/update-status  ← Status + notes             │
-│  DELETE /api/delete-job     ← Remove application         │
+│  POST   /api/process-job    ← Full AI pipeline (SSE)    │
+│  PATCH  /api/update-status  ← Status + notes            │
+│  DELETE /api/delete-job     ← Remove application        │
 └──────────┬──────────────────────┬───────────────────────┘
            │                      │
-┌──────────▼──────────┐  ┌────────▼────────────────────── ┐
-│   Jina AI Reader     │  │         Supabase               │
-│   r.jina.ai          │  │                                │
-│   (free, no key)     │  │  Auth   (email/password)       │
-└──────────┬───────────┘  │  DB     (job_applications,     │
-           │               │          user_profiles)        │
-┌──────────▼──────────┐   │  Storage (cv-uploads,          │
-│   Anthropic API      │  │           job-documents)       │
-│   claude-sonnet-4-6  │  └────────────────────────────────┘
+┌──────────▼──────────┐  ┌────────▼───────────────────────┐
+│  Job page fetching   │  │         Supabase               │
+│                      │  │                                │
+│  1. Direct fetch     │  │  Auth   (email/password)       │
+│     → JSON-LD parse  │  │  DB     (job_applications,     │
+│  2. HTML text strip  │  │          user_profiles)        │
+│  3. Jina AI fallback │  │  Storage (cv-uploads,          │
+└──────────┬───────────┘  │           job-documents)       │
+           │               └────────────────────────────────┘
+┌──────────▼──────────┐
+│   Anthropic API      │
+│   claude-sonnet-4-6  │
 │                      │
 │  · Extract job info  │
 │  · Score CV fit      │
@@ -62,8 +66,11 @@ ApplyAI is a **Next.js App Router** application. All AI calls and data operation
 ### Key design decisions
 
 - **No Python backend** — everything runs in Next.js API routes (Node.js). Simpler to deploy, one codebase.
-- **Jina AI Reader for job fetching** — `https://r.jina.ai/{url}` renders JavaScript-heavy pages (LinkedIn, Greenhouse, Lever, Workday) server-side and returns clean text. Free, no API key required.
+- **Three-tier job fetching** — Direct fetch with browser headers is tried first (free, no rate limits). JSON-LD structured data (`<script type="application/ld+json">`) is preferred when present — it's clean and structured, better than raw HTML. Plain HTML text extraction is the second attempt. Jina AI Reader is the last resort for JavaScript-rendered pages that return empty HTML.
+- **Tracking param stripping** — URLs are normalised before fetching: known tracking parameters (`utm_*`, `eBP`, `trk`, `refId`, `trackingId`, `fbclid`, etc.) are removed. Job identity is always in the URL path on major boards, so stripping these doesn't change which page loads, and prevents sites from serving gated responses to tracked requests.
+- **SSE streaming progress** — `/api/process-job` streams pipeline progress as Server-Sent Events (`text/event-stream`). The browser receives live step updates ("Fetching job page…", "Scoring your fit…", etc.) instead of waiting silently for 60 seconds. Early-exit responses (auth failure, rate limit, duplicate) are still plain JSON.
 - **Server-side AI calls** — `ANTHROPIC_API_KEY` never leaves the server. API routes validate Supabase auth before calling Claude.
+- **Prompt caching** — The candidate's CV text is sent as a cached content block (`cache_control: { type: "ephemeral" }`). The score step writes the cache; the tailor step, running seconds later with the identical block, gets a guaranteed cache read hit (~10× cheaper).
 - **PDF parsed server-side** — `pdf-parse` runs in the API route, not the browser. Handles text-based PDFs up to 10MB.
 - **Supabase RLS as the security boundary** — even if API auth is bypassed, users can only read/write their own rows. Defence in depth.
 - **CV stored as text, documents as files** — the raw CV text lives in `user_profiles.cv_raw_text` for fast AI access. Generated `.docx` files live in Supabase Storage and are linked by URL.
@@ -82,7 +89,7 @@ apply-ai/
 │   │   ├── upload-cv/
 │   │   │   └── route.ts          # CV upload: PDF → text → upserts user_profiles
 │   │   ├── process-job/
-│   │   │   └── route.ts          # Full AI pipeline (see §5)
+│   │   │   └── route.ts          # Full AI pipeline — SSE streaming (see §5)
 │   │   ├── update-status/
 │   │   │   └── route.ts          # PATCH: update status or notes
 │   │   └── delete-job/
@@ -91,14 +98,14 @@ apply-ai/
 │   ├── login/
 │   │   └── page.tsx              # Email/password auth (client component)
 │   ├── page.tsx                  # Dashboard: server component, fetches jobs
-│   ├── layout.tsx                # Root layout: Inter font, ToastProvider, ErrorBoundary
+│   ├── layout.tsx                # Root layout: Inter font, anti-flicker theme script, ToastProvider, ErrorBoundary
 │   ├── icon.svg                  # Favicon (brand colour + "A")
 │   ├── not-found.tsx             # Custom 404 page
-│   └── globals.css               # Tailwind base + scrollbar styles
+│   └── globals.css               # Tailwind base + dark scrollbar styles
 │
 ├── components/
 │   ├── DashboardClient.tsx       # Main interactive UI (see §8)
-│   ├── Navbar.tsx                # Sticky top nav with sign out
+│   ├── Navbar.tsx                # Sticky top nav: logo, email, dark-mode toggle, sign out
 │   ├── Toast.tsx                 # ToastProvider + useToast() hook
 │   └── ErrorBoundary.tsx         # React error boundary with recovery UI
 │
@@ -112,11 +119,12 @@ apply-ai/
 │
 ├── proxy.ts                      # Auth session helper (Supabase SSR pattern)
 ├── next.config.js                # External packages config + security headers
-├── tailwind.config.js            # Custom colors: ink, mist, slate, brand, emerge, warn, danger
+├── tailwind.config.js            # Custom colors + darkMode: 'class'
 ├── tsconfig.json
 ├── package.json
 ├── .env.example                  # Environment variable template
 ├── README.md
+├── SETUP.md                      # Plain-English setup guide for non-developers
 └── TECHNICAL.md                  # This file
 ```
 
@@ -235,41 +243,43 @@ CREATE POLICY "jobs: own rows only" ON job_applications
 { "jobUrl": "https://example.com/jobs/product-manager" }
 ```
 
+**Response format — two modes:**
+
+Pre-flight checks (auth, rate limit, CV presence, URL validity, duplicate) return **plain JSON** with the appropriate HTTP status. The client checks `Content-Type` to detect which mode it's in.
+
+Once all checks pass, the pipeline begins and the response switches to **Server-Sent Events** (`Content-Type: text/event-stream`). Events are newline-delimited JSON prefixed with `data: `.
+
+**SSE event types:**
+
+| `type` | Payload | Meaning |
+|--------|---------|---------|
+| `progress` | `{ message: string }` | Step started — display to user |
+| `result` | `{ score, company, role, recommendation, job }` | Pipeline complete, job saved |
+| `skipped` | `{ score, reason, job }` | Score below threshold, saved as skipped |
+| `error` | `{ message, status? }` | Pipeline error (extraction failure, API error, etc.) |
+
+**Progress sequence (normal flow):**
+```
+Fetching job page…
+Extracting job details…
+Scoring your fit…
+Tailoring your CV…
+Writing cover letter…
+Saving documents…
+```
+
 **Guards (in order):**
-1. Rate limit — rejects if user has already processed `DAILY_JOB_LIMIT` jobs today (HTTP 429)
-2. CV check — rejects if no CV uploaded yet (HTTP 400)
-3. URL validation — rejects non-http/https URLs (HTTP 400)
-4. Duplicate check — rejects if this URL was already processed (HTTP 409)
-5. Content validation — rejects if Jina returns < 200 chars (likely login wall or empty page)
-6. Extraction validation — rejects if Claude can't find a role, company, or skills (likely not a job posting)
+1. Auth check — HTTP 401 if no session
+2. Rate limit — HTTP 429 if `DAILY_JOB_LIMIT` reached today
+3. CV check — HTTP 400 if no CV uploaded
+4. URL validation — HTTP 400 for non-http/https URLs
+5. Duplicate check — HTTP 409 if URL already processed (returns full `job` object so dashboard can open it)
+6. *(Pipeline starts, switches to SSE)*
+7. Extraction validation — `error` SSE event (422) if role/company/skills not found
+8. Score threshold — `skipped` SSE event if score < threshold
 
-**Flow:** See [§5 AI pipeline](#5-ai-pipeline-in-detail).
-
-**Response (success, score ≥ threshold):**
-```json
-{
-  "skipped": false,
-  "score": 84,
-  "company": "Mollie",
-  "role": "Senior Product Manager",
-  "recommendation": "apply",
-  "job": { /* full job_applications row */ }
-}
-```
-
-**Response (skipped, score < threshold):**
-```json
-{
-  "skipped": true,
-  "score": 52,
-  "reason": "Creative domain too far from candidate background.",
-  "job": { /* full job_applications row with status: skipped */ }
-}
-```
-
-In both cases the full `job` object is returned so the dashboard can update immediately without a page reload.
-
-**Errors:** `400` (missing URL / no CV), `401` (unauth), `409` (duplicate), `422` (not a job posting / login wall), `429` (daily limit), `500` (pipeline error)
+**Errors (JSON):** `400`, `401`, `409`, `429`
+**Errors (SSE):** `error` event with `status: 422` or `status: 500`
 
 ---
 
@@ -304,23 +314,50 @@ The route enforces `user_id` ownership — users can only delete their own recor
 
 All Claude calls use `claude-sonnet-4-6` with structured JSON output.
 
-### Step 1 — Fetch job page (Jina AI Reader)
+### Step 1 — Fetch job page (three-tier strategy)
+
+The pipeline tries three methods in order, stopping at the first that returns ≥ 300 characters of content:
+
+**Tier 1 — Direct fetch with browser headers**
 
 ```
-https://r.jina.ai/{jobUrl}
+fetch(cleanJobUrl, { headers: { User-Agent: Chrome/124, Accept: text/html... } })
+  → HTML response
+  → Try JSON-LD extraction first (see below)
+  → Fall back to HTML tag stripping
+```
+
+Before fetching, `cleanJobUrl()` strips known tracking-only query parameters (`utm_*`, `eBP`, `trk`, `refId`, `trackingId`, `alternateChannel`, `fbclid`, `gclid`, etc.). Job identity lives in the URL path on all major boards, so stripping these doesn't change the target page and prevents sites from serving gated or different responses to bot-detected tracking URLs.
+
+**JSON-LD extraction** (attempted first within Tier 1):
+
+Many job boards embed full job data as `<script type="application/ld+json">` with `@type: "JobPosting"` for SEO. This structured data is cleaner than scraped HTML. The extractor finds all JSON-LD blocks, parses each, and returns formatted plain text with title, company, location, employment type, and description (HTML tags stripped).
+
+Sites known to include `JobPosting` JSON-LD: LinkedIn, Indeed, Greenhouse, Lever, Ashby, most company career pages.
+
+**HTML text strip** (Tier 1 fallback):
+
+If no JSON-LD is found, `<script>`, `<style>`, and all HTML tags are removed; HTML entities are decoded; whitespace collapsed to single spaces.
+
+**Tier 2 — Jina AI Reader** (fallback for JS-rendered pages):
+
+```
+https://r.jina.ai/{cleanJobUrl}
   → renders JavaScript, strips navigation/ads/boilerplate
-  → returns clean markdown/plain text
-  → truncated to 8000 chars
+  → returns clean plain text
 ```
 
-Jina AI Reader handles JavaScript-rendered pages that a plain `fetch()` can't read: LinkedIn job listings, Greenhouse, Lever, Workday, Ashby, and most modern career sites. It is free with no API key required.
+Jina handles pages that need JavaScript rendering (some LinkedIn pages, Workday, some SPAs). If `JINA_API_KEY` is set, it is sent as `Authorization: Bearer …` for a higher request quota. Without a key, Jina's anonymous tier is used (subject to rate limits).
 
-**Error handling chain:**
-| Condition | HTTP | Error message |
-|-----------|------|---------------|
-| Jina returns 4xx/5xx | 422 | "Could not fetch job page (403). Check the URL is publicly accessible." |
-| Response < 200 chars | 422 | "Job page returned too little content. The URL may require a login…" |
-| Claude finds no role/company/skills | 422 | "Could not extract job details from this URL. The page may require login, or it may not be a job posting." |
+**Error handling:**
+
+| Condition | Result |
+|-----------|--------|
+| All three tiers return < 300 chars | SSE `error` event — "Could not retrieve this job page" |
+| Claude finds no role/company/skills | SSE `error` event (422) — extraction failed |
+| LinkedIn login wall detected | SSE `error` event (422) — LinkedIn-specific message |
+
+Final text is truncated to 8000 chars before passing to Claude.
 
 ### Step 2 — Extract job details
 
@@ -334,6 +371,8 @@ Claude reads the raw text and returns structured JSON:
   nice_to_have,       // string[]
 }
 ```
+
+**Extraction validation:** requires `(role AND company)` OR `skills`, AND description ≥ 80 words. Prevents login-wall pages that expose the job title in the HTML `<title>` tag from passing through with empty company/skills.
 
 ### Step 3 — Score fit
 
@@ -349,7 +388,7 @@ Claude reads the candidate's `cv_raw_text` (first 6000 chars) via a **cached con
 }
 ```
 
-If `score < FIT_SCORE_THRESHOLD` (default 60), the job is saved as `skipped` and the pipeline stops. No further Claude calls, no documents generated.
+If `score < FIT_SCORE_THRESHOLD` (default 60), the job is saved as `skipped` and a `skipped` SSE event is sent. No further Claude calls, no documents generated.
 
 ### Step 4 — Tailor full CV
 
@@ -359,7 +398,7 @@ Claude reads the full CV via the **same cached content block** from Step 3 — t
 {
   full_name, email, phone, location, linkedin,
   professional_summary,   // 3–4 sentences tailored to this role
-  skills_to_highlight,    // string[6] — ordered by relevance
+  skills_to_highlight,    // string[] — ordered by relevance
   experience: [{
     company, role, dates,
     bullets: string[],    // rewritten bullets emphasising relevant experience
@@ -394,10 +433,12 @@ These two run concurrently with `Promise.all` to save 5–8 seconds:
 - Contact line (email · phone · location · LinkedIn)
 - "Applying for: [role] at [company]" in brand colour italic
 - Professional Summary section
-- Key Skills — 2-column grid
+- Key Skills — plain bullet list (`▪  Skill name`), one per line
 - Experience — each role with dates and bullet points
 - Education
 - Languages
+
+> **Note on Key Skills layout:** A two-column table was attempted but caused rendering issues in Apple Pages and other non-Word renderers due to OOXML `pct` width unit interpretation (values are in 1/50th-of-a-percent units, not plain percent). Plain bullets are universally compatible.
 
 **Cover letter text** — Claude writes a 3-paragraph cover letter (max 320 words):
 1. Specific hook about this company or role
@@ -421,14 +462,14 @@ Both `.docx` files are uploaded to the public `job-documents` bucket:
 - `{user_id}/{timestamp}-cv.docx`
 - `{user_id}/{timestamp}-cover.docx`
 
-One `INSERT` into `job_applications` stores all extracted data, scores, tailored content, and file URLs.
+One `INSERT` into `job_applications` stores all extracted data, scores, tailored content, and file URLs. A `result` SSE event is sent with the full record so the dashboard row appears immediately.
 
 ### Claude call summary
 
 | Step | Model | Max tokens | Caching | Approx cost |
 |------|-------|-----------|---------|-------------|
 | Extract job | claude-sonnet-4-6 | 1200 | — | ~$0.003 |
-| Score fit | claude-sonnet-4-6 | 600 | Cache **write** (CV block) | ~$0.003 |
+| Score fit | claude-sonnet-4-6 | 1200 | Cache **write** (CV block) | ~$0.003 |
 | Tailor CV | claude-sonnet-4-6 | 2500 | Cache **read** (CV block) | ~$0.005 |
 | Cover letter | claude-sonnet-4-6 | 800 | — | ~$0.004 |
 | **Total per job** | | | | **~$0.015–0.020** |
@@ -486,6 +527,8 @@ Set globally via `next.config.js`:
 
 **`job-documents` is public** — generated files must be downloadable directly from the dashboard without additional auth. Files are namespaced by `user_id` as the first path segment, enforced by storage policies.
 
+**Documents are generated once, at processing time.** The download button is a direct link to the stored file — no regeneration on click, no AI tokens used. To get updated documents after a code change, re-process the job URL.
+
 ---
 
 ## 8. Frontend components
@@ -498,21 +541,31 @@ Fetches the session, user profile, and all job applications in parallel. Passes 
 
 The entire interactive UI. Key behaviours:
 
-- **Live state** — jobs are added to the local array immediately after the pipeline returns (no page reload). The API returns the full job record on success so the row appears instantly.
+- **SSE stream reading** — `process()` in `ProcessJobBar` detects the `text/event-stream` Content-Type and reads the response body as a stream. Progress messages update a `progress` state variable shown under the Analyse button. On `result` or `skipped` events, the job is added to the list and a toast appears. On `error` events, an error toast is shown. Early-exit responses (JSON Content-Type) are handled as before.
+- **Live state** — jobs are added to the local array immediately after the pipeline returns the `result` event (no page reload). Duplicate URLs are filtered on prepend to prevent double rows after re-processing.
 - **Client-side stats** — `computeStats(jobs)` derives all dashboard header numbers from the in-memory job array, keeping them reactive to status changes and deletions.
 - **CV section** — when no CV is uploaded, shows an inline upload form. When a CV is active, shows a compact "CV active · Replace" bar. No separate `/setup` route.
 - **StatusPill** — dropdown with click-outside-to-close. Calls `/api/update-status` on change and updates local state immediately.
 - **DetailPanel** — slide-in panel showing fit score, strengths/gaps, download buttons for CV + cover letter (.docx), copyable cover letter text, notes editor, and delete button.
 - **Pagination** — 20 jobs per page, with Prev/Next controls. Page resets to 0 when filter, search, or sort changes.
 - **Filter / search / sort** — filter by status pill; search by company, role, or location; sort by date / fit score / company name.
+- **Icons** — `lucide-react` throughout: `Link2` in URL input, `Upload`/`FileText` for CV section, `Download`/`ExternalLink`/`Copy`/`Check` in detail panel, `Trash2`/`X` for delete/close, `Search` in search bar, `ChevronLeft`/`ChevronRight` for pagination.
 
 ### `Navbar.tsx` (Client Component)
 
-Sticky top nav. Shows the user's email and a sign-out button. CV upload status is handled by the dashboard, not the navbar.
+Sticky top nav. Shows the SVG logo ("A" on indigo), "Apply**AI**" wordmark, user email, a **dark/light mode toggle** (Sun/Moon icons), and a sign-out button.
+
+**Dark mode implementation:**
+- `tailwind.config.js` uses `darkMode: 'class'`
+- An anti-flicker inline script runs via `<Script strategy="beforeInteractive">` in `app/layout.tsx` — reads `localStorage.theme` or `prefers-color-scheme` and sets the `dark` class on `<html>` before React hydrates, preventing a flash of the wrong theme
+- The toggle writes to `localStorage` and toggles the `dark` class on `document.documentElement`
+- All components use `dark:` Tailwind variants (e.g. `dark:bg-gray-900`, `dark:text-gray-50`)
 
 ### `Toast.tsx`
 
 `ToastProvider` wraps the app root. `useToast()` returns a `toast(type, message)` function used by `DashboardClient` for success, error, and info messages. Toasts auto-dismiss after 4 seconds.
+
+Toast colours: `success` = green, `error` = red, `info` = `bg-gray-700` (dark neutral — avoids being invisible in dark mode).
 
 ### `ErrorBoundary.tsx`
 
@@ -527,6 +580,7 @@ Class component wrapping the app root. Catches unexpected React render errors an
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon/public key |
 | `ANTHROPIC_API_KEY` | Yes | Anthropic API key (server-side only, never sent to browser) |
+| `JINA_API_KEY` | No | Jina AI API key for higher fetch rate limits. Get free at jina.ai. Without this, anonymous Jina requests are used as fallback (lower quota). |
 | `FIT_SCORE_THRESHOLD` | No | Minimum fit score to generate documents (default: `60`) |
 | `DAILY_JOB_LIMIT` | No | Max job analyses per user per day (default: `10`) |
 
@@ -585,12 +639,14 @@ vercel
 
 Add all environment variables in Vercel dashboard → Settings → Environment Variables.
 
-**Timeout:** The pipeline runs ~20–35 seconds. Vercel Hobby has a 10-second limit — **Vercel Pro ($20/month)** raises this to 60 seconds. Alternatively, add this to the route:
+**Timeout:** The pipeline runs ~20–60 seconds (depending on job board and AI response times). Vercel Hobby has a 10-second limit — **Vercel Pro ($20/month)** raises this to 60 seconds. Add this to the route:
 
 ```typescript
 // app/api/process-job/route.ts
 export const maxDuration = 60 // requires Vercel Pro
 ```
+
+**SSE and Vercel:** Server-Sent Events work correctly on Vercel Pro with streaming enabled. The `X-Accel-Buffering: no` header is set to disable proxy buffering and ensure events reach the browser immediately.
 
 ### Alternative: Railway / Render
 
@@ -605,17 +661,18 @@ Both support Next.js with longer timeouts on free tiers. Deploy via GitHub integ
 - Sufficient for personal use and small teams
 
 ### Anthropic API
-- ~$0.02–0.03 per job fully processed (4 Claude calls)
-- ~$0.005 per skipped job (2 calls: extract + score)
-- ~$2–3 per 100 applications
+- ~$0.015–0.020 per job fully processed (4 Claude calls, with prompt caching)
+- ~$0.006 per skipped job (2 calls: extract + score)
+- ~$1.50–2.00 per 100 applications (vs ~$2.50–3.00 without caching)
 
-### Jina AI Reader
-- Free, no usage limits documented for moderate use
-- No API key required
+### Jina AI Reader (fallback only)
+- Used only when direct fetch + JSON-LD both fail (JS-rendered pages without structured data)
+- Free anonymous tier: moderate rate limit, sufficient for personal use
+- Optional `JINA_API_KEY` (free to obtain at jina.ai) for a higher quota
 
 ### Vercel
 - Hobby: free, 10s function timeout (pipeline will hit this)
-- Pro: $20/month, 60s timeout
+- Pro: $20/month, 60s timeout — required for production use
 
 ---
 
@@ -669,23 +726,38 @@ Allow users to upload their own `.docx` template. Parse the template structure, 
 
 Allow multiple named CV profiles (e.g. one for product roles, one for consulting). Select manually when processing a job, or auto-select based on role type.
 
+### Phase 8 — Document regeneration
+
+A "Regenerate documents" button that rebuilds the `.docx` CV and cover letter from already-stored tailored data — no AI tokens used. Allows fixing formatting issues retroactively for existing jobs without re-running the full pipeline.
+
 ---
 
 ## 14. Known limitations
 
 ### Job page fetching
 
+The pipeline uses a three-tier fetch strategy. Each tier is attempted in order:
+
+| Tier | Method | Sites covered |
+|------|--------|---------------|
+| 1a | Direct fetch → JSON-LD | LinkedIn, Indeed, Greenhouse, Lever, Ashby, most career pages |
+| 1b | Direct fetch → HTML strip | Simple static career pages |
+| 2 | Jina AI Reader | JS-rendered pages without JSON-LD |
+| — | ❌ Fail | SSO-gated ATS, pages requiring login |
+
 | Site | Status | Notes |
 |------|--------|-------|
-| LinkedIn (public jobs) | ✅ Works | Jina renders the page correctly |
-| LinkedIn (login-required) | ❌ Auth wall | Returns login page — caught with clear error |
-| Indeed | ✅ Works | Clean extraction |
-| Greenhouse | ✅ Works | Clean extraction |
-| Lever | ✅ Works | Clean extraction |
-| Ashby | ✅ Works | Clean extraction |
+| LinkedIn (public jobs) | ✅ Works | JSON-LD extraction; or Jina for login-wall pages |
+| LinkedIn (login-required) | ❌ Auth wall | 422 error with LinkedIn-specific guidance |
+| Indeed | ✅ Works | JSON-LD extraction |
+| Greenhouse | ✅ Works | JSON-LD + direct fetch |
+| Lever | ✅ Works | JSON-LD + direct fetch |
+| Ashby | ✅ Works | JSON-LD + direct fetch |
 | Workday | ✅ Improved | Jina handles JS rendering |
-| Company career pages | ✅ Usually works | Varies; SPAs are handled by Jina |
+| Company career pages | ✅ Usually works | Varies; SPAs use Jina |
 | Private ATS (SSO-gated) | ❌ Auth wall | No free solution; use a direct job URL instead |
+
+Jina rate limits (anonymous tier): if many URLs are processed in a short window, Jina may return 451 or 429. The direct fetch tiers are not subject to any rate limits. Adding `JINA_API_KEY` raises the Jina quota significantly.
 
 ### PDF parsing
 
@@ -695,11 +767,11 @@ Allow multiple named CV profiles (e.g. one for product roles, one for consulting
 
 ### Claude output reliability
 
-Claude is prompted to return strict JSON. Occasionally (~1–2% of calls) it may return malformed JSON or include unexpected content. `parseJson()` strips markdown fences. If parsing fails, the route returns a 500 — retry the URL.
+Claude is prompted to return strict JSON. Occasionally (~1–2% of calls) it may return malformed JSON or include unexpected content. `parseJson()` strips markdown fences. If parsing fails, the route sends an `error` SSE event — retry the URL.
 
 ### Vercel free tier timeout
 
-The pipeline runs 4 Claude calls (two in parallel after tailoring). Total time: ~20–35 seconds. Vercel Hobby times out at 10 seconds. Use Vercel Pro or deploy to Railway/Render.
+The pipeline runs 4 Claude calls (two in parallel after tailoring). Total time: ~20–60 seconds. Vercel Hobby times out at 10 seconds. Use Vercel Pro or deploy to Railway/Render.
 
 ### Rate limits
 
