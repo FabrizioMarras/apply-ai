@@ -264,15 +264,31 @@ async function buildCvDocx(
     const col1 = tailored.skills_to_highlight.slice(0, half)
     const col2 = tailored.skills_to_highlight.slice(half)
     const maxRows = Math.max(col1.length, col2.length)
+    // docx uses OOXML pct units: 1/50th of a percent, so 50% = 2500, 100% = 5000
+    const noBorder = { style: BorderStyle.NONE, size: 0, color: 'auto' } as const
+    const cellBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder }
+    const cellWidth   = { size: 2500, type: WidthType.PERCENTAGE }
     const rows = Array.from({ length: maxRows }, (_, i) =>
       new TableRow({
         children: [
-          new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: col1[i] ? `▪  ${col1[i]}` : '', size: 19, font: 'Calibri', color: DARK })] })], width: { size: 50, type: WidthType.PERCENTAGE }, borders: { top: {style:BorderStyle.NONE}, bottom: {style:BorderStyle.NONE}, left: {style:BorderStyle.NONE}, right: {style:BorderStyle.NONE} } }),
-          new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: col2[i] ? `▪  ${col2[i]}` : '', size: 19, font: 'Calibri', color: DARK })] })], width: { size: 50, type: WidthType.PERCENTAGE }, borders: { top: {style:BorderStyle.NONE}, bottom: {style:BorderStyle.NONE}, left: {style:BorderStyle.NONE}, right: {style:BorderStyle.NONE} } }),
+          new TableCell({
+            children: [new Paragraph({ children: [new TextRun({ text: col1[i] ? `▪  ${col1[i]}` : '', size: 19, font: 'Calibri', color: DARK })] })],
+            width: cellWidth,
+            borders: cellBorders,
+          }),
+          new TableCell({
+            children: [new Paragraph({ children: [new TextRun({ text: col2[i] ? `▪  ${col2[i]}` : '', size: 19, font: 'Calibri', color: DARK })] })],
+            width: cellWidth,
+            borders: cellBorders,
+          }),
         ],
       })
     )
-    children.push(new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE }, borders: { top: {style:BorderStyle.NONE}, bottom: {style:BorderStyle.NONE}, left: {style:BorderStyle.NONE}, right: {style:BorderStyle.NONE} } }))
+    children.push(new Table({
+      rows,
+      width: { size: 5000, type: WidthType.PERCENTAGE },
+      borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
+    }))
     children.push(new Paragraph({ children: [], spacing: { after: 120 } }))
   }
 
