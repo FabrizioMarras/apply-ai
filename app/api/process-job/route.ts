@@ -68,8 +68,33 @@ function cvCacheBlock(cvText: string): CachedBlock {
 // Uses Jina AI Reader (r.jina.ai) to extract clean text from any URL,
 // including JavaScript-rendered job boards like LinkedIn, Greenhouse, Lever.
 
+// Known tracking-only query parameters that are safe to drop before fetching.
+// Job identity is always in the URL path on major boards (LinkedIn, Greenhouse,
+// Lever, Indeed, Ashby), so stripping these doesn't change which page loads.
+const TRACKING_PARAMS = new Set([
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'utm_id',
+  'fbclid', 'gclid', 'gclsrc', 'dclid', 'msclkid',
+  // LinkedIn-specific
+  'trk', 'trkInfo', 'refId', 'trackingId', 'alternateChannel', 'eBP',
+  // Indeed
+  'from', 'vjs', 'jsa',
+  // Generic
+  'ref', 'source', 'src', 'campaign', 'medium',
+])
+
+function cleanJobUrl(raw: string): string {
+  const u = new URL(raw)
+  for (const key of [...u.searchParams.keys()]) {
+    if (TRACKING_PARAMS.has(key)) u.searchParams.delete(key)
+  }
+  // If no meaningful params remain, drop the query string entirely
+  if ([...u.searchParams.keys()].length === 0) u.search = ''
+  return u.toString()
+}
+
 async function fetchJobText(url: string): Promise<string> {
-  const res = await fetch(`https://r.jina.ai/${url}`, {
+  const fetchUrl = cleanJobUrl(url)
+  const res = await fetch(`https://r.jina.ai/${fetchUrl}`, {
     headers: { Accept: 'text/plain' },
     signal: AbortSignal.timeout(25000),
   })
