@@ -101,7 +101,7 @@ function StatusPill({ status, onChange }: { status: JobStatus; onChange: (s: Job
       <button
         ref={btnRef}
         onClick={toggle}
-        className="rounded-full px-3 py-1 text-xs font-bold cursor-pointer border-0"
+        className="rounded-full px-3 py-1 text-xs font-bold cursor-pointer border-0 whitespace-nowrap"
         style={{ background: m.bg, color: m.color }}
       >
         {m.label} ▾
@@ -216,28 +216,30 @@ function CvSection({ hasCv, onUploaded }: { hasCv: boolean; onUploaded: () => vo
 
 // ── Detail Panel ──────────────────────────────────────────────────────────────
 
-function DetailPanel({ job, onClose, onStatusChange, onDelete }: {
+function DetailPanel({ job, onClose, onStatusChange, onDelete, onNotesChange }: {
   job: JobApplication
   onClose: () => void
   onStatusChange: (id: string, s: JobStatus) => void
   onDelete: (id: string) => void
+  onNotesChange: (id: string, notes: string) => void
 }) {
   const { toast }               = useToast()
   const [copied, setCopied]     = useState<'summary' | 'letter' | null>(null)
   const [notes, setNotes]       = useState(job.notes ?? '')
-  const [saving, setSaving]     = useState(false)
+  const [notesSaved, setNotesSaved] = useState(false)
   const [deleting, setDeleting]           = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
-  async function saveNotes() {
-    setSaving(true)
+  async function handleNotesBlur() {
+    if (notes === (job.notes ?? '')) return
     await fetch('/api/update-status', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: job.id, notes }),
     })
-    setSaving(false)
-    toast('success', 'Notes saved')
+    onNotesChange(job.id, notes)
+    setNotesSaved(true)
+    setTimeout(() => setNotesSaved(false), 2000)
   }
 
   async function handleDelete() {
@@ -273,7 +275,7 @@ function DetailPanel({ job, onClose, onStatusChange, onDelete }: {
       <div className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-white dark:bg-gray-900 shadow-2xl z-50 flex flex-col overflow-y-auto">
 
         {/* Header */}
-        <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-start sticky top-0 bg-white dark:bg-gray-900">
+        <div className="px-6 py-5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-start sticky top-0 bg-white dark:bg-gray-900 z-10">
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-400 mb-1">{job.company}</p>
             <h2 className="text-xl font-bold text-ink dark:text-gray-50">{job.role}</h2>
@@ -398,17 +400,17 @@ function DetailPanel({ job, onClose, onStatusChange, onDelete }: {
 
           {/* Notes */}
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-400 mb-2">Notes</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-400">Notes</p>
+              {notesSaved && <p className="text-xs text-emerge">Saved</p>}
+            </div>
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
+              onBlur={handleNotesBlur}
               placeholder="Add notes about this application…"
               className="w-full min-h-24 p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-ink dark:text-gray-100 placeholder:text-gray-300 dark:placeholder:text-gray-600 resize-y focus:border-brand outline-none"
             />
-            <button onClick={saveNotes} disabled={saving}
-              className="mt-2 text-xs font-semibold text-brand hover:underline disabled:opacity-50">
-              {saving ? 'Saving…' : 'Save notes'}
-            </button>
           </div>
 
           {/* Footer: date + delete */}
@@ -612,6 +614,10 @@ export default function DashboardClient({
     setJobs(js => js.filter(j => j.id !== id))
   }
 
+  function updateNotes(id: string, notes: string) {
+    setJobs(js => js.map(j => j.id === id ? { ...j, notes } : j))
+  }
+
   const filtered = jobs
     .filter(j => filter === 'all' || j.status === filter)
     .filter(j => !search || `${j.company} ${j.role} ${j.location}`.toLowerCase().includes(search.toLowerCase()))
@@ -811,6 +817,7 @@ export default function DashboardClient({
           onClose={() => setSelected(null)}
           onStatusChange={updateStatus}
           onDelete={removeJob}
+          onNotesChange={updateNotes}
         />
       )}
     </main>

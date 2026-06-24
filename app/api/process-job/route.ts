@@ -325,14 +325,14 @@ async function buildCvDocx(
 
   const sectionHeading = (text: string) => new Paragraph({
     children: [new TextRun({ text: text.toUpperCase(), bold: true, size: 18, color: BRAND, font: 'Calibri' })],
-    spacing: { before: 280, after: 80 },
+    spacing: { before: 560, after: 120 },
     border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: DIVIDER } },
   })
 
   const bullet = (text: string) => new Paragraph({
     children: [new TextRun({ text, size: 20, color: DARK, font: 'Calibri' })],
     bullet: { level: 0 },
-    spacing: { after: 60 },
+    spacing: { after: 80 },
   })
 
   const children: Paragraph[] = []
@@ -340,26 +340,26 @@ async function buildCvDocx(
   children.push(new Paragraph({
     children: [new TextRun({ text: tailored.full_name || 'Your Name', bold: true, size: 52, color: DARK, font: 'Calibri' })],
     alignment: AlignmentType.LEFT,
-    spacing: { after: 60 },
+    spacing: { after: 80 },
   }))
 
   const contactParts = [tailored.email, tailored.phone, tailored.location, tailored.linkedin].filter(Boolean)
   if (contactParts.length) {
     children.push(new Paragraph({
       children: [new TextRun({ text: contactParts.join('  ·  '), size: 18, color: MUTED, font: 'Calibri' })],
-      spacing: { after: 40 },
+      spacing: { after: 60 },
     }))
   }
 
   children.push(new Paragraph({
     children: [new TextRun({ text: `Applying for: ${job.role} at ${job.company}`, size: 17, color: BRAND, italics: true, font: 'Calibri' })],
-    spacing: { after: 200 },
+    spacing: { after: 80 },
   }))
 
   children.push(sectionHeading('Professional Summary'))
   children.push(new Paragraph({
     children: [new TextRun({ text: tailored.professional_summary, size: 20, color: DARK, font: 'Calibri' })],
-    spacing: { after: 120 },
+    spacing: { after: 160 },
   }))
 
   if (tailored.skills_to_highlight?.length) {
@@ -367,10 +367,9 @@ async function buildCvDocx(
     for (const skill of tailored.skills_to_highlight) {
       children.push(new Paragraph({
         children: [new TextRun({ text: `▪  ${skill}`, size: 19, font: 'Calibri', color: DARK })],
-        spacing: { after: 60 },
+        spacing: { after: 80 },
       }))
     }
-    children.push(new Paragraph({ children: [], spacing: { after: 80 } }))
   }
 
   if (tailored.experience?.length) {
@@ -381,11 +380,11 @@ async function buildCvDocx(
           new TextRun({ text: exp.role, bold: true, size: 22, color: DARK, font: 'Calibri' }),
           new TextRun({ text: `  ·  ${exp.company}`, size: 20, color: MUTED, font: 'Calibri' }),
         ],
-        spacing: { before: 160, after: 40 },
+        spacing: { before: 200, after: 40 },
       }))
       children.push(new Paragraph({
         children: [new TextRun({ text: exp.dates, size: 17, color: MUTED, italics: true, font: 'Calibri' })],
-        spacing: { after: 80 },
+        spacing: { after: 100 },
       }))
       for (const b of exp.bullets) {
         children.push(bullet(b))
@@ -401,11 +400,11 @@ async function buildCvDocx(
           new TextRun({ text: edu.degree, bold: true, size: 20, color: DARK, font: 'Calibri' }),
           new TextRun({ text: `  ·  ${edu.institution}`, size: 19, color: MUTED, font: 'Calibri' }),
         ],
-        spacing: { before: 100, after: 40 },
+        spacing: { before: 160, after: 40 },
       }))
       children.push(new Paragraph({
         children: [new TextRun({ text: edu.dates, size: 17, color: MUTED, italics: true, font: 'Calibri' })],
-        spacing: { after: 80 },
+        spacing: { after: 100 },
       }))
     }
   }
@@ -414,7 +413,7 @@ async function buildCvDocx(
     children.push(sectionHeading('Languages'))
     children.push(new Paragraph({
       children: [new TextRun({ text: tailored.languages.join('  ·  '), size: 19, color: DARK, font: 'Calibri' })],
-      spacing: { after: 80 },
+      spacing: { after: 120 },
     }))
   }
 
