@@ -625,7 +625,10 @@ Add `console.log(raw)` before any `parseJson()` call in `process-job/route.ts` t
 Temporarily replace the `fetchJobText()` call with a hardcoded job description string to test AI steps without a live page fetch.
 
 **Supabase local dev:**
-Run `npx supabase start` (requires Docker) and update `NEXT_PUBLIC_SUPABASE_URL` to `http://localhost:54321`.
+Run `npx supabase start` (requires Docker) and update `NEXT_PUBLIC_SUPABASE_URL` to `http://localhost:54321`. Local instances never pause — the keep-alive workflow is not needed.
+
+**Preventing free-tier pausing (cloud Supabase only):**
+Supabase pauses projects after 7 days of inactivity. `.github/workflows/keepalive.yml` pings the DB every 3 days via the REST API using two repository secrets (`SUPABASE_URL`, `SUPABASE_ANON_KEY`). Activate by pushing to GitHub and adding the secrets in Settings → Secrets and variables → Actions.
 
 ---
 

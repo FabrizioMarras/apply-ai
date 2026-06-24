@@ -226,6 +226,31 @@ You should see the ApplyAI login screen.
 
 ---
 
+## Preventing Supabase from pausing
+
+Supabase's free plan **automatically pauses your database after 7 days without activity**. If this happens, the app will show errors until you log in to Supabase and click "Restore project".
+
+To prevent this automatically, the app includes a keep-alive workflow for GitHub Actions — a free service that runs a tiny check every 3 days to keep your database active.
+
+> **Skip this if you're running Supabase locally** (using `npx supabase start`). Local databases never pause.
+
+### How to activate it
+
+1. Make sure your project is on GitHub (if you downloaded the ZIP, you'll need to upload it)
+2. On your GitHub repository page, go to **Settings → Secrets and variables → Actions**
+3. Click **"New repository secret"** and add these two secrets:
+
+   | Name | Value |
+   |------|-------|
+   | `SUPABASE_URL` | Your Supabase Project URL (from Step 4e — looks like `https://abc123.supabase.co`) |
+   | `SUPABASE_ANON_KEY` | Your Supabase anon public key (from Step 4e — the long `eyJ...` string) |
+
+4. Done — GitHub will automatically ping your database every 3 days
+
+You can also go to the **Actions** tab on your repository and run it manually at any time to test it.
+
+---
+
 ## How to start the app again next time
 
 Every time you want to use the app, you need to:

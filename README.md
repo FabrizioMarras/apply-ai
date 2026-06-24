@@ -157,6 +157,29 @@ Skipped jobs (below fit threshold) cost ~$0.006 — only extract and score steps
 
 ---
 
+## Keeping Supabase active (free tier)
+
+Supabase free-tier projects **pause after 7 days of inactivity**, which causes database errors for anyone who doesn't use the app regularly.
+
+> **Not needed if you run Supabase locally** (`npx supabase start`). Local instances never pause.
+
+### Automatic fix — GitHub Actions keep-alive
+
+The repo includes `.github/workflows/keepalive.yml`, which pings your Supabase database every 3 days. To activate it:
+
+1. Push the repo to GitHub (if you haven't already)
+2. Go to your repo → **Settings → Secrets and variables → Actions → New repository secret**
+3. Add two secrets:
+
+| Secret name | Value |
+|-------------|-------|
+| `SUPABASE_URL` | Your Supabase Project URL (e.g. `https://xyz.supabase.co`) |
+| `SUPABASE_ANON_KEY` | Your Supabase anon public key |
+
+That's it. The workflow runs automatically every 3 days and keeps the project alive indefinitely. You can also trigger it manually from the **Actions** tab at any time.
+
+---
+
 ## Multi-user
 
 Already supported. Each user has their own CV, job applications, and documents. Supabase Row Level Security (RLS) enforces data isolation at the database level — no extra code required.

@@ -1,0 +1,35 @@
+name: Supabase keep-alive
+
+# Pings the Supabase database every 3 days to prevent the free-tier project
+# from being paused due to inactivity (Supabase pauses after 7 days).
+# Not needed if you are running Supabase locally (npx supabase start).
+
+on:
+  schedule:
+    - cron: '0 8 */3 * *'  # every 3 days at 08:00 UTC
+  workflow_dispatch:         # allow manual trigger from GitHub Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "Secrets not configured — skipping keep-alive."
+            echo "If using local Supabase (npx supabase start), this workflow is not needed."
+            exit 0
+          fi
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            "$SUPABASE_URL/rest/v1/user_profiles?select=id&limit=1")
+          echo "Response status: $STATUS"
+          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 300 ]; then
+            echo "Supabase is active."
+          else
+            echo "Unexpected status $STATUS — check your SUPABASE_URL and SUPABASE_ANON_KEY secrets." && exit 1
+          fi
