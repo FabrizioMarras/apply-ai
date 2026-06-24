@@ -1,6 +1,6 @@
 # ApplyAI — Technical Documentation
 
-> Last updated: June 2026 | Version: 0.3.0
+> Last updated: June 2026 | Version: 0.4.0
 
 ---
 
@@ -545,10 +545,11 @@ The entire interactive UI. Key behaviours:
 - **Live state** — jobs are added to the local array immediately after the pipeline returns the `result` event (no page reload). Duplicate URLs are filtered on prepend to prevent double rows after re-processing.
 - **Client-side stats** — `computeStats(jobs)` derives all dashboard header numbers from the in-memory job array, keeping them reactive to status changes and deletions.
 - **CV section** — when no CV is uploaded, shows an inline upload form. When a CV is active, shows a compact "CV active · Replace" bar. No separate `/setup` route.
-- **StatusPill** — dropdown with click-outside-to-close. Calls `/api/update-status` on change and updates local state immediately.
-- **DetailPanel** — slide-in panel showing fit score, strengths/gaps, download buttons for CV + cover letter (.docx), copyable cover letter text, notes editor, and delete button.
+- **Responsive job list** — on desktop (`md+`) jobs render as a 6-column CSS grid table (Score · Company/Role · Location · Type · Date · Status). On mobile (`< md`) jobs render as cards: score badge + company/role + status pill in a single row, with location, work type, and date as a secondary line below. The status pill on cards has `stopPropagation` so tapping it doesn't open the detail panel.
+- **StatusPill** — dropdown that uses `position: fixed` with coordinates from `getBoundingClientRect()` to escape any `overflow: hidden` ancestor (the table wrapper). When near the right edge of the viewport (e.g. in the detail panel or on mobile), the dropdown right-aligns to the button instead of left-aligning, preventing viewport overflow.
+- **Filter bar** — two rows on all screen sizes: (1) a full-width search input (`flex-1`) with sort buttons inline to the right; (2) status filter pills in a horizontally scrollable single row on mobile (`overflow-x-auto`, `-mx-4 px-4` edge-to-edge bleed, `shrink-0` pills, hidden scrollbar), wrapping normally on desktop.
+- **DetailPanel** — slide-in panel showing fit score, strengths/gaps, download buttons for CV + cover letter (.docx), copyable cover letter text, notes editor, and delete. Delete uses an inline confirmation (first click reveals "Are you sure? / Cancel / Delete" in the footer row) — no browser `confirm()` dialog.
 - **Pagination** — 20 jobs per page, with Prev/Next controls. Page resets to 0 when filter, search, or sort changes.
-- **Filter / search / sort** — filter by status pill; search by company, role, or location; sort by date / fit score / company name.
 - **Icons** — `lucide-react` throughout: `Link2` in URL input, `Upload`/`FileText` for CV section, `Download`/`ExternalLink`/`Copy`/`Check` in detail panel, `Trash2`/`X` for delete/close, `Search` in search bar, `ChevronLeft`/`ChevronRight` for pagination.
 
 ### `Navbar.tsx` (Client Component)
