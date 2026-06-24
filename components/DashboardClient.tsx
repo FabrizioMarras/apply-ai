@@ -409,9 +409,10 @@ function DetailPanel({ job, onClose, onStatusChange, onDelete }: {
 
 // ── Process Job Bar ───────────────────────────────────────────────────────────
 
-function ProcessJobBar({ hasCv, onJobAdded }: {
+function ProcessJobBar({ hasCv, onJobAdded, onDuplicate }: {
   hasCv: boolean
   onJobAdded: (job: JobApplication) => void
+  onDuplicate: (job: JobApplication) => void
 }) {
   const { toast } = useToast()
   const [url, setUrl]         = useState('')
@@ -419,7 +420,7 @@ function ProcessJobBar({ hasCv, onJobAdded }: {
 
   async function process() {
     const trimmed = url.trim()
-    if (!trimmed) return
+    if (!trimmed || loading) return
     setLoading(true)
     try {
       const res  = await fetch('/api/process-job', {
@@ -429,9 +430,15 @@ function ProcessJobBar({ hasCv, onJobAdded }: {
       })
       const data = await res.json()
       if (!res.ok) {
-        toast('error', data.error ?? 'Something went wrong')
+        if (res.status === 409 && data.job) {
+          toast('info', 'Already in your dashboard — opening it now.')
+          onDuplicate(data.job as JobApplication)
+          setUrl('')
+        } else {
+          toast('error', data.error ?? 'Something went wrong')
+        }
       } else if (data.skipped) {
-        toast('info', `Fit score ${data.score}/100 — below threshold. Logged as skipped.`)
+        toast('info', `Fit score ${data.score}/100 — not a strong match. Saved as skipped. Click the row to see why.`)
         if (data.job) onJobAdded(data.job as JobApplication)
         setUrl('')
       } else {
@@ -512,7 +519,9 @@ export default function DashboardClient({
   const stats = computeStats(jobs)
 
   function addJob(job: JobApplication) {
-    setJobs(prev => [job, ...prev])
+    // Replace any existing entry with the same URL (e.g. a stale skipped record
+    // that the server deleted before re-processing), then prepend the new one.
+    setJobs(prev => [job, ...prev.filter(j => j.job_url !== job.job_url)])
   }
 
   async function updateStatus(id: string, status: JobStatus) {
@@ -562,7 +571,7 @@ export default function DashboardClient({
       <CvSection hasCv={hasCv} onUploaded={() => setHasCv(true)} />
 
       {/* Process job */}
-      <ProcessJobBar hasCv={hasCv} onJobAdded={addJob} />
+      <ProcessJobBar hasCv={hasCv} onJobAdded={addJob} onDuplicate={j => setSelected(j)} />
 
       {/* Filters */}
       <div className="flex gap-3 mb-4 flex-wrap items-center">

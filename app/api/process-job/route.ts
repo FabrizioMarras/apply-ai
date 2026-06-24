@@ -492,28 +492,45 @@ export async function POST(req: NextRequest) {
 
   const { data: existing } = await supabase
     .from('job_applications')
-    .select('id')
+    .select('*')
     .eq('user_id', user.id)
     .eq('job_url', jobUrl)
     .single()
 
   if (existing) {
-    return NextResponse.json({ error: 'You have already processed this job URL.' }, { status: 409 })
+    // Skipped records may be re-processed: the user may have updated their CV
+    // or the previous attempt fetched a login-wall page with a low score.
+    // Delete the stale record and let the pipeline run fresh.
+    if (existing.status === 'skipped') {
+      await supabase.from('job_applications').delete().eq('id', existing.id)
+    } else {
+      return NextResponse.json({
+        error: 'This job URL is already in your dashboard.',
+        job: existing,
+      }, { status: 409 })
+    }
   }
 
   try {
     const rawText = await fetchJobText(jobUrl)
     const job     = await extractJob(rawText)
 
-    // Guard: if extraction couldn't find a role or company, the page was
-    // likely a login wall, a redirect, or not a job posting at all.
-    if (
-      (!job.role    || job.role    === 'unknown') &&
-      (!job.company || job.company === 'unknown') &&
-      job.required_skills.length === 0
-    ) {
+    // Guard: require at minimum a recognisable role AND company.
+    // The previous AND-only check was too lenient — a LinkedIn login page
+    // returns the job title in <title>, so Claude could extract a role while
+    // company and skills are both empty/unknown, letting garbage content
+    // through to the full pipeline.
+    const hasRole    = job.role    && job.role    !== 'unknown'
+    const hasCompany = job.company && job.company !== 'unknown'
+    const hasSkills  = job.required_skills.length > 0
+    const hasDesc    = (job.description ?? '').split(/\s+/).length >= 80
+
+    if (!(hasRole && hasCompany) && !hasSkills || !hasDesc) {
+      const isLinkedIn = parsedUrl.hostname.includes('linkedin.com')
       return NextResponse.json({
-        error: 'Could not extract job details from this URL. The page may require login, or it may not be a job posting. Try a direct link to the job listing.',
+        error: isLinkedIn
+          ? 'Could not read this LinkedIn page — it likely requires a sign-in. Try opening the job in an incognito window first to confirm it\'s public, or use the company\'s own careers page instead.'
+          : 'Could not extract enough job details from this URL. The page may require a login or may not be a job posting.',
       }, { status: 422 })
     }
 
