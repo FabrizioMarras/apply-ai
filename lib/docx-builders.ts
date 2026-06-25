@@ -26,15 +26,15 @@ export async function buildCvDocx(tailored: TailoredCV, job: JobSummary): Promis
   const BRAND   = '2E3192'
   const DARK    = '111827'
   const MUTED   = '6B7280'
-  const DIVIDER = 'E5E7EB'
+  const DIVIDER = '9CA3AF'
 
   // Plain paragraph — no Word heading style, no inheritance, direct formatting only.
   // ATS parsers identify sections by uppercase bold keywords in the text, which is
   // the primary mechanism for Workday, Greenhouse, Lever, and iCIMS.
   const sectionHeading = (text: string) => new Paragraph({
     children: [new TextRun({ text: text.toUpperCase(), bold: true, size: 18, color: BRAND, font: 'Calibri' })],
-    spacing: { before: 280, after: 80 },
-    border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: DIVIDER } },
+    spacing: { before: 360, after: 100 },
+    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: DIVIDER } },
   })
 
   const bullet = (text: string, after = 60) => new Paragraph({
@@ -76,18 +76,19 @@ export async function buildCvDocx(tailored: TailoredCV, job: JobSummary): Promis
   children.push(sectionHeading('Professional Summary'))
   children.push(new Paragraph({
     children: [new TextRun({ text: tailored.professional_summary, size: 20, color: DARK, font: 'Calibri' })],
-    spacing: { after: 100 },
+    spacing: { after: 200 },
   }))
 
   // Key Skills
   if (tailored.skills_to_highlight?.length) {
     children.push(sectionHeading('Key Skills'))
-    for (const skill of tailored.skills_to_highlight) {
+    tailored.skills_to_highlight.forEach((skill, i) => {
+      const isLast = i === tailored.skills_to_highlight.length - 1
       children.push(new Paragraph({
         children: [new TextRun({ text: `• ${skill}`, size: 19, font: 'Calibri', color: DARK })],
-        spacing: { after: 40 },
+        spacing: { after: isLast ? 200 : 40 },
       }))
-    }
+    })
   }
 
   // Experience
@@ -105,7 +106,8 @@ export async function buildCvDocx(tailored: TailoredCV, job: JobSummary): Promis
       const isLastEntry = i === tailored.experience.length - 1
       exp.bullets.forEach((b, bi) => {
         const isLastBullet = bi === exp.bullets.length - 1
-        children.push(bullet(b, isLastBullet && !isLastEntry ? 240 : 60))
+        const after = isLastBullet ? (isLastEntry ? 200 : 240) : 60
+        children.push(bullet(b, after))
       })
     })
   }
@@ -114,13 +116,14 @@ export async function buildCvDocx(tailored: TailoredCV, job: JobSummary): Promis
   if (tailored.education?.length) {
     children.push(sectionHeading('Education'))
     tailored.education.forEach((edu, i) => {
+      const isLast = i === tailored.education.length - 1
       children.push(new Paragraph({
         children: [
           new TextRun({ text: edu.degree, bold: true, size: 20, color: DARK, font: 'Calibri' }),
           new TextRun({ text: edu.institution, size: 19, color: MUTED, font: 'Calibri', break: 1 }),
           new TextRun({ text: edu.dates, size: 17, color: MUTED, italics: true, font: 'Calibri', break: 1 }),
         ],
-        spacing: { before: i === 0 ? 0 : 120, after: 60 },
+        spacing: { before: i === 0 ? 0 : 120, after: isLast ? 200 : 60 },
       }))
     })
   }
@@ -128,12 +131,13 @@ export async function buildCvDocx(tailored: TailoredCV, job: JobSummary): Promis
   // Languages
   if (tailored.languages?.length) {
     children.push(sectionHeading('Languages'))
-    for (const lang of tailored.languages) {
+    tailored.languages.forEach((lang, i) => {
+      const isLast = i === tailored.languages.length - 1
       children.push(new Paragraph({
         children: [new TextRun({ text: `• ${lang}`, size: 19, font: 'Calibri', color: DARK })],
-        spacing: { after: 80 },
+        spacing: { after: isLast ? 200 : 80 },
       }))
-    }
+    })
   }
 
   const doc = new Document({
