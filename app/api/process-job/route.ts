@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import Anthropic from '@anthropic-ai/sdk'
-import {
-  Document, Packer, Paragraph, TextRun,
-  AlignmentType, BorderStyle,
-} from 'docx'
+import { buildCvDocx, buildCoverLetterDocx } from '@/lib/docx-builders'
 
 const ai = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const THRESHOLD   = parseInt(process.env.FIT_SCORE_THRESHOLD ?? '60')
@@ -314,119 +311,6 @@ Gaps (acknowledge honestly if relevant): ${fit.gaps.join(', ')}
 
 // ── Step 5: Build .docx ───────────────────────────────────────────────────────
 
-async function buildCvDocx(
-  tailored: Awaited<ReturnType<typeof tailorCV>>,
-  job: Awaited<ReturnType<typeof extractJob>>,
-): Promise<Buffer> {
-  const BRAND   = '2E3192'
-  const DARK    = '111827'
-  const MUTED   = '6B7280'
-  const DIVIDER = 'E5E7EB'
-
-  const sectionHeading = (text: string) => new Paragraph({
-    children: [new TextRun({ text: text.toUpperCase(), bold: true, size: 18, color: BRAND, font: 'Calibri' })],
-    spacing: { before: 560, after: 120 },
-    border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: DIVIDER } },
-  })
-
-  const bullet = (text: string) => new Paragraph({
-    children: [new TextRun({ text, size: 20, color: DARK, font: 'Calibri' })],
-    bullet: { level: 0 },
-    spacing: { after: 80 },
-  })
-
-  const children: Paragraph[] = []
-
-  children.push(new Paragraph({
-    children: [new TextRun({ text: tailored.full_name || 'Your Name', bold: true, size: 52, color: DARK, font: 'Calibri' })],
-    alignment: AlignmentType.LEFT,
-    spacing: { after: 80 },
-  }))
-
-  const contactParts = [tailored.email, tailored.phone, tailored.location, tailored.linkedin].filter(Boolean)
-  if (contactParts.length) {
-    children.push(new Paragraph({
-      children: [new TextRun({ text: contactParts.join('  ·  '), size: 18, color: MUTED, font: 'Calibri' })],
-      spacing: { after: 60 },
-    }))
-  }
-
-  children.push(new Paragraph({
-    children: [new TextRun({ text: `Applying for: ${job.role} at ${job.company}`, size: 17, color: BRAND, italics: true, font: 'Calibri' })],
-    spacing: { after: 80 },
-  }))
-
-  children.push(sectionHeading('Professional Summary'))
-  children.push(new Paragraph({
-    children: [new TextRun({ text: tailored.professional_summary, size: 20, color: DARK, font: 'Calibri' })],
-    spacing: { after: 160 },
-  }))
-
-  if (tailored.skills_to_highlight?.length) {
-    children.push(sectionHeading('Key Skills'))
-    for (const skill of tailored.skills_to_highlight) {
-      children.push(new Paragraph({
-        children: [new TextRun({ text: `▪  ${skill}`, size: 19, font: 'Calibri', color: DARK })],
-        spacing: { after: 80 },
-      }))
-    }
-  }
-
-  if (tailored.experience?.length) {
-    children.push(sectionHeading('Experience'))
-    for (const exp of tailored.experience) {
-      children.push(new Paragraph({
-        children: [
-          new TextRun({ text: exp.role, bold: true, size: 22, color: DARK, font: 'Calibri' }),
-          new TextRun({ text: `  ·  ${exp.company}`, size: 20, color: MUTED, font: 'Calibri' }),
-        ],
-        spacing: { before: 200, after: 40 },
-      }))
-      children.push(new Paragraph({
-        children: [new TextRun({ text: exp.dates, size: 17, color: MUTED, italics: true, font: 'Calibri' })],
-        spacing: { after: 100 },
-      }))
-      for (const b of exp.bullets) {
-        children.push(bullet(b))
-      }
-    }
-  }
-
-  if (tailored.education?.length) {
-    children.push(sectionHeading('Education'))
-    for (const edu of tailored.education) {
-      children.push(new Paragraph({
-        children: [
-          new TextRun({ text: edu.degree, bold: true, size: 20, color: DARK, font: 'Calibri' }),
-          new TextRun({ text: `  ·  ${edu.institution}`, size: 19, color: MUTED, font: 'Calibri' }),
-        ],
-        spacing: { before: 160, after: 40 },
-      }))
-      children.push(new Paragraph({
-        children: [new TextRun({ text: edu.dates, size: 17, color: MUTED, italics: true, font: 'Calibri' })],
-        spacing: { after: 100 },
-      }))
-    }
-  }
-
-  if (tailored.languages?.length) {
-    children.push(sectionHeading('Languages'))
-    children.push(new Paragraph({
-      children: [new TextRun({ text: tailored.languages.join('  ·  '), size: 19, color: DARK, font: 'Calibri' })],
-      spacing: { after: 120 },
-    }))
-  }
-
-  const doc = new Document({
-    sections: [{
-      properties: { page: { margin: { top: 720, bottom: 720, left: 900, right: 900 } } },
-      children,
-    }],
-  })
-
-  return Buffer.from(await Packer.toBuffer(doc))
-}
-
 // ── Step 6: Cover letter text ─────────────────────────────────────────────────
 
 async function writeCoverLetter(
@@ -453,90 +337,7 @@ Summary: ${summary}
 }
 
 // ── Step 7: Cover letter .docx ────────────────────────────────────────────────
-
-async function buildCoverLetterDocx(
-  text: string,
-  tailored: Awaited<ReturnType<typeof tailorCV>>,
-  job: Awaited<ReturnType<typeof extractJob>>,
-): Promise<Buffer> {
-  const BRAND = '2E3192'
-  const DARK  = '111827'
-  const MUTED = '6B7280'
-  const DIVIDER = 'E5E7EB'
-
-  const today = new Date().toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'long', year: 'numeric',
-  })
-
-  // Split on blank lines; collapse any inline newlines within a paragraph
-  const paras = text
-    .split(/\n{2,}/)
-    .map(p => p.replace(/\n/g, ' ').trim())
-    .filter(Boolean)
-
-  const contactParts = [
-    tailored.email, tailored.phone, tailored.location, tailored.linkedin,
-  ].filter(Boolean)
-
-  const children: Paragraph[] = [
-    // Candidate name
-    new Paragraph({
-      children: [new TextRun({ text: tailored.full_name || 'Your Name', bold: true, size: 52, color: DARK, font: 'Calibri' })],
-      spacing: { after: 60 },
-    }),
-    // Contact line
-    ...(contactParts.length ? [new Paragraph({
-      children: [new TextRun({ text: contactParts.join('  ·  '), size: 18, color: MUTED, font: 'Calibri' })],
-      spacing: { after: 40 },
-    })] : []),
-    // Divider spacer
-    new Paragraph({
-      children: [],
-      border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: DIVIDER } },
-      spacing: { after: 280 },
-    }),
-    // Date
-    new Paragraph({
-      children: [new TextRun({ text: today, size: 19, color: MUTED, font: 'Calibri', italics: true })],
-      spacing: { after: 240 },
-    }),
-    // Addressee
-    new Paragraph({
-      children: [new TextRun({ text: 'Hiring Manager', bold: true, size: 20, color: DARK, font: 'Calibri' })],
-      spacing: { after: 40 },
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: job.company, size: 20, color: DARK, font: 'Calibri' })],
-      spacing: { after: 40 },
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: job.location ?? '', size: 19, color: MUTED, font: 'Calibri' })],
-      spacing: { after: 320 },
-    }),
-    // Body paragraphs
-    ...paras.map(p => new Paragraph({
-      children: [new TextRun({ text: p, size: 20, color: DARK, font: 'Calibri' })],
-      spacing: { after: 200 },
-    })),
-    // Closing
-    new Paragraph({
-      children: [new TextRun({ text: 'Sincerely,', size: 20, color: DARK, font: 'Calibri' })],
-      spacing: { before: 280, after: 200 },
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: tailored.full_name || 'Your Name', bold: true, size: 20, color: BRAND, font: 'Calibri' })],
-    }),
-  ]
-
-  const doc = new Document({
-    sections: [{
-      properties: { page: { margin: { top: 720, bottom: 720, left: 900, right: 900 } } },
-      children,
-    }],
-  })
-
-  return Buffer.from(await Packer.toBuffer(doc))
-}
+// (buildCoverLetterDocx imported from @/lib/docx-builders)
 
 // ── Route handler ─────────────────────────────────────────────────────────────
 
@@ -703,6 +504,9 @@ export async function POST(req: NextRequest) {
           tailored_summary:  tailored.professional_summary,
           tailored_bullets:  tailored.experience,
           tailored_skills:   tailored.skills_to_highlight,
+          tailored_contact:  { full_name: tailored.full_name, email: tailored.email, phone: tailored.phone, location: tailored.location, linkedin: tailored.linkedin },
+          tailored_education: tailored.education,
+          tailored_languages: tailored.languages,
           cover_letter_text: coverLetterText,
           cover_letter_url:  coverUrlData?.publicUrl ?? null,
           cv_file_url:       cvUrlData?.publicUrl ?? null,

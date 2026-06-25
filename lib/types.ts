@@ -25,6 +25,9 @@ export interface JobApplication {
   tailored_summary: string | null
   tailored_bullets: Array<{ company: string; role: string; dates: string; bullets: string[] }> | null
   tailored_skills: string[] | null
+  tailored_contact: { full_name: string; email: string; phone: string; location: string; linkedin: string } | null
+  tailored_education: Array<{ institution: string; degree: string; dates: string }> | null
+  tailored_languages: string[] | null
   status: JobStatus
   notes: string | null
   created_at: string

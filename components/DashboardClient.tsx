@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   CheckCircle2, Upload, FileText, Download, ExternalLink,
   Copy, Check, Trash2, X, Search, Link2,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, RefreshCw,
 } from 'lucide-react'
 import { JobApplication, JobStats, JobStatus, STATUS_META, scoreColor } from '@/lib/types'
 import { useToast } from '@/components/Toast'
@@ -216,12 +216,13 @@ function CvSection({ hasCv, onUploaded }: { hasCv: boolean; onUploaded: () => vo
 
 // ── Detail Panel ──────────────────────────────────────────────────────────────
 
-function DetailPanel({ job, onClose, onStatusChange, onDelete, onNotesChange }: {
+function DetailPanel({ job, onClose, onStatusChange, onDelete, onNotesChange, onUrlsUpdate }: {
   job: JobApplication
   onClose: () => void
   onStatusChange: (id: string, s: JobStatus) => void
   onDelete: (id: string) => void
   onNotesChange: (id: string, notes: string) => void
+  onUrlsUpdate: (id: string, cv_file_url: string | null, cover_letter_url: string | null) => void
 }) {
   const { toast }               = useToast()
   const [copied, setCopied]     = useState<'summary' | 'letter' | null>(null)
@@ -229,6 +230,7 @@ function DetailPanel({ job, onClose, onStatusChange, onDelete, onNotesChange }: 
   const [notesSaved, setNotesSaved] = useState(false)
   const [deleting, setDeleting]           = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [regenerating, setRegenerating]   = useState(false)
 
   async function handleNotesBlur() {
     if (notes === (job.notes ?? '')) return
@@ -257,6 +259,28 @@ function DetailPanel({ job, onClose, onStatusChange, onDelete, onNotesChange }: 
       toast('error', 'Delete failed. Please try again.')
       setDeleting(false)
       setConfirmDelete(false)
+    }
+  }
+
+  async function handleRegenerate() {
+    setRegenerating(true)
+    try {
+      const res = await fetch('/api/regenerate-docs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: job.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast('error', data.error ?? 'Regeneration failed. Please try again.')
+        return
+      }
+      onUrlsUpdate(job.id, data.cv_file_url ?? null, data.cover_letter_url ?? null)
+      toast('success', 'Documents regenerated — download links updated.')
+    } catch {
+      toast('error', 'Regeneration failed. Please try again.')
+    } finally {
+      setRegenerating(false)
     }
   }
 
@@ -352,6 +376,16 @@ function DetailPanel({ job, onClose, onStatusChange, onDelete, onNotesChange }: 
               </a>
             )}
           </div>
+          {job.tailored_bullets?.length ? (
+            <button
+              onClick={handleRegenerate}
+              disabled={regenerating}
+              className="flex items-center justify-center gap-2 w-full py-2 text-xs font-semibold text-slate dark:text-gray-400 hover:text-brand dark:hover:text-brand border border-gray-200 dark:border-gray-700 rounded-xl transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={12} className={regenerating ? 'animate-spin' : ''} />
+              {regenerating ? 'Regenerating…' : 'Regenerate .docx files'}
+            </button>
+          ) : null}
 
           {/* Summary preview */}
           {job.tailored_summary && (
@@ -618,6 +652,11 @@ export default function DashboardClient({
     setJobs(js => js.map(j => j.id === id ? { ...j, notes } : j))
   }
 
+  function updateUrls(id: string, cv_file_url: string | null, cover_letter_url: string | null) {
+    setJobs(js => js.map(j => j.id === id ? { ...j, cv_file_url, cover_letter_url } : j))
+    if (selected?.id === id) setSelected(s => s ? { ...s, cv_file_url, cover_letter_url } : null)
+  }
+
   const filtered = jobs
     .filter(j => filter === 'all' || j.status === filter)
     .filter(j => !search || `${j.company} ${j.role} ${j.location}`.toLowerCase().includes(search.toLowerCase()))
@@ -818,6 +857,7 @@ export default function DashboardClient({
           onStatusChange={updateStatus}
           onDelete={removeJob}
           onNotesChange={updateNotes}
+          onUrlsUpdate={updateUrls}
         />
       )}
     </main>

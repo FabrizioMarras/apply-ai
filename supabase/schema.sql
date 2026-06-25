@@ -46,6 +46,9 @@ CREATE TABLE job_applications (
   tailored_summary    text,
   tailored_bullets    jsonb DEFAULT '[]',   -- per-section rewritten bullets
   tailored_skills     jsonb DEFAULT '[]',   -- ordered skills list for this role
+  tailored_contact    jsonb,               -- { full_name, email, phone, location, linkedin }
+  tailored_education  jsonb DEFAULT '[]',  -- [{ institution, degree, dates }]
+  tailored_languages  jsonb DEFAULT '[]',  -- string[]
 
   -- Tracking
   status              text DEFAULT 'new'
