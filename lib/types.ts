@@ -39,6 +39,7 @@ export interface UserProfile {
   id: string
   cv_raw_text: string | null
   cv_file_url: string | null
+  cv_file_name: string | null
   full_name: string | null
   location: string | null
   target_roles: string | null

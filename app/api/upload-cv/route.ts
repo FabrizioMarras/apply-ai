@@ -41,9 +41,10 @@ export async function POST(req: NextRequest) {
     id: user.id,
     cv_raw_text: text,
     cv_file_url: signedData?.signedUrl ?? null,
+    cv_file_name: file.name,
     updated_at: new Date().toISOString(),
   })
   if (dbErr) return NextResponse.json({ error: 'Database error' }, { status: 500 })
 
-  return NextResponse.json({ success: true, charCount: text.length, preview: text.slice(0, 200) })
+  return NextResponse.json({ success: true, charCount: text.length, preview: text.slice(0, 200), fileName: file.name })
 }

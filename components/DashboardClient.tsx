@@ -126,7 +126,12 @@ function StatusPill({ status, onChange }: { status: JobStatus; onChange: (s: Job
 
 // ── CV Section ────────────────────────────────────────────────────────────────
 
-function CvSection({ hasCv, onUploaded }: { hasCv: boolean; onUploaded: () => void }) {
+function CvSection({ hasCv, fileName, updatedAt, onUploaded }: {
+  hasCv: boolean
+  fileName: string | null
+  updatedAt: string | null
+  onUploaded: (fileName: string) => void
+}) {
   const { toast } = useToast()
   const [file, setFile]           = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -146,7 +151,7 @@ function CvSection({ hasCv, onUploaded }: { hasCv: boolean; onUploaded: () => vo
         toast('success', `CV uploaded — ${data.charCount.toLocaleString()} characters extracted`)
         setFile(null)
         setReplacing(false)
-        onUploaded()
+        onUploaded(data.fileName ?? file.name)
       }
     } catch {
       toast('error', 'Upload failed. Please try again.')
@@ -159,11 +164,20 @@ function CvSection({ hasCv, onUploaded }: { hasCv: boolean; onUploaded: () => vo
     return (
       <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm px-5 py-3 mb-6 flex items-center gap-3">
         <CheckCircle2 size={16} className="text-emerge shrink-0" />
-        <span className="text-emerge font-bold text-sm">CV active</span>
-        <span className="text-xs text-slate dark:text-gray-400 flex-1">Your CV is ready for job analysis.</span>
+        <span className="text-emerge font-bold text-sm shrink-0">CV active</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-slate dark:text-gray-400 truncate">
+            {fileName ?? 'Your CV is ready for job analysis.'}
+          </p>
+          {updatedAt && (
+            <p className="text-[11px] text-gray-400 dark:text-gray-600">
+              Uploaded {new Date(updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </p>
+          )}
+        </div>
         <button
           onClick={() => setReplacing(true)}
-          className="text-xs font-semibold text-brand hover:underline"
+          className="text-xs font-semibold text-brand hover:underline shrink-0"
         >
           Replace CV
         </button>
@@ -614,10 +628,17 @@ function ProcessJobBar({ hasCv, onJobAdded, onDuplicate }: {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function DashboardClient({
-  initialJobs, initialHasCv,
-}: { initialJobs: JobApplication[]; initialHasCv: boolean }) {
-  const [jobs, setJobs]         = useState(initialJobs)
-  const [hasCv, setHasCv]       = useState(initialHasCv)
+  initialJobs, initialHasCv, initialCvFileName, initialCvUpdatedAt,
+}: {
+  initialJobs: JobApplication[]
+  initialHasCv: boolean
+  initialCvFileName: string | null
+  initialCvUpdatedAt: string | null
+}) {
+  const [jobs, setJobs]             = useState(initialJobs)
+  const [hasCv, setHasCv]           = useState(initialHasCv)
+  const [cvFileName, setCvFileName] = useState(initialCvFileName)
+  const [cvUpdatedAt, setCvUpdatedAt] = useState(initialCvUpdatedAt)
   const [selected, setSelected] = useState<JobApplication | null>(null)
   const [filter, setFilter]     = useState<JobStatus | 'all'>('all')
   const [search, setSearch]     = useState('')
@@ -708,7 +729,16 @@ export default function DashboardClient({
       </div>
 
       {/* CV section */}
-      <CvSection hasCv={hasCv} onUploaded={() => setHasCv(true)} />
+      <CvSection
+        hasCv={hasCv}
+        fileName={cvFileName}
+        updatedAt={cvUpdatedAt}
+        onUploaded={fileName => {
+          setHasCv(true)
+          setCvFileName(fileName)
+          setCvUpdatedAt(new Date().toISOString())
+        }}
+      />
 
       {/* Process job */}
       <ProcessJobBar hasCv={hasCv} onJobAdded={addJob} onDuplicate={j => setSelected(j)} />

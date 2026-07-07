@@ -143,6 +143,7 @@ One row per user, keyed to `auth.users.id`.
 | `id` | uuid (PK) | References `auth.users(id)` |
 | `cv_raw_text` | text | Full text extracted from uploaded PDF |
 | `cv_file_url` | text | Signed URL (1-year expiry) to original PDF in private `cv-uploads` bucket |
+| `cv_file_name` | text | Original filename of the uploaded PDF, shown in the dashboard's "CV active" bar so the user can tell which version is on file |
 | `full_name` | text | Optional display name |
 | `location` | text | e.g. "Amsterdam, NL" |
 | `target_roles` | text | e.g. "Product Manager, Product Lead" |
@@ -221,11 +222,11 @@ CREATE POLICY "jobs: own rows only" ON job_applications
 3. Validate text length ≥ 100 chars (rejects scanned image PDFs)
 4. Upload PDF to private `cv-uploads/{user_id}/cv-{timestamp}.pdf`
 5. Generate 1-year signed URL for the uploaded file
-6. Upsert `user_profiles` with `cv_raw_text` and signed `cv_file_url`
+6. Upsert `user_profiles` with `cv_raw_text`, signed `cv_file_url`, and the original `cv_file_name` (from `file.name`, not the storage path — the storage path is timestamped and not user-friendly)
 
 **Response:**
 ```json
-{ "success": true, "charCount": 3842, "preview": "John Smith\nAmsterdam…" }
+{ "success": true, "charCount": 3842, "preview": "John Smith\nAmsterdam…", "fileName": "John_Smith_CV.pdf" }
 ```
 
 **Errors:** `400` (no file / wrong type / too large / unreadable), `401` (unauthenticated), `500` (storage or DB error)
@@ -544,7 +545,7 @@ The entire interactive UI. Key behaviours:
 - **SSE stream reading** — `process()` in `ProcessJobBar` detects the `text/event-stream` Content-Type and reads the response body as a stream. Progress messages update a `progress` state variable shown under the Analyse button. On `result` or `skipped` events, the job is added to the list and a toast appears. On `error` events, an error toast is shown. Early-exit responses (JSON Content-Type) are handled as before.
 - **Live state** — jobs are added to the local array immediately after the pipeline returns the `result` event (no page reload). Duplicate URLs are filtered on prepend to prevent double rows after re-processing.
 - **Client-side stats** — `computeStats(jobs)` derives all dashboard header numbers from the in-memory job array, keeping them reactive to status changes and deletions.
-- **CV section** — when no CV is uploaded, shows an inline upload form. When a CV is active, shows a compact "CV active · Replace" bar. No separate `/setup` route.
+- **CV section** — when no CV is uploaded, shows an inline upload form. When a CV is active, shows a compact "CV active · Replace" bar with the original filename and upload date (`cv_file_name` / `updated_at` from `user_profiles`), so the user can tell which version is on file without re-opening the PDF. No separate `/setup` route.
 - **Responsive job list** — on desktop (`md+`) jobs render as a 6-column CSS grid table (Score · Company/Role · Location · Type · Date · Status). On mobile (`< md`) jobs render as cards: score badge + company/role + status pill in a single row, with location, work type, and date as a secondary line below. The status pill on cards has `stopPropagation` so tapping it doesn't open the detail panel.
 - **StatusPill** — dropdown that uses `position: fixed` with coordinates from `getBoundingClientRect()` to escape any `overflow: hidden` ancestor (the table wrapper). When near the right edge of the viewport (e.g. in the detail panel or on mobile), the dropdown right-aligns to the button instead of left-aligning, preventing viewport overflow.
 - **Filter bar** — two rows on all screen sizes: (1) a full-width search input; (2) status filter pills in a horizontally scrollable single row on mobile (`overflow-x-auto`, `-mx-4 px-4` edge-to-edge bleed, `shrink-0` pills, hidden scrollbar), wrapping normally on desktop.

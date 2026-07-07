@@ -20,6 +20,8 @@ export default async function DashboardPage() {
       <DashboardClient
         initialJobs={(jobs ?? []) as JobApplication[]}
         initialHasCv={!!profile?.cv_raw_text}
+        initialCvFileName={profile?.cv_file_name ?? null}
+        initialCvUpdatedAt={profile?.cv_raw_text ? profile?.updated_at ?? null : null}
       />
     </>
   )

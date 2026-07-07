@@ -9,6 +9,7 @@ CREATE TABLE user_profiles (
   id            uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   cv_raw_text   text,                    -- extracted text from uploaded PDF
   cv_file_url   text,                    -- link to original PDF in storage
+  cv_file_name  text,                    -- original filename of the uploaded PDF
   full_name     text,
   location      text,
   target_roles  text,                    -- e.g. "Product Manager, Product Lead"
@@ -120,3 +121,6 @@ GROUP BY auth.uid();
 -- Storage → Policies → New policy for each bucket:
 --   INSERT: (auth.uid()::text = (storage.foldername(name))[1])
 --   SELECT: (auth.uid()::text = (storage.foldername(name))[1])
+
+-- 8. MIGRATIONS (for databases created before this line was added)
+-- ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS cv_file_name text;
