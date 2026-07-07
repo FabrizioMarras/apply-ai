@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   CheckCircle2, Upload, FileText, Download, ExternalLink,
   Copy, Check, Trash2, X, Search, Link2,
-  ChevronLeft, ChevronRight, RefreshCw,
+  ChevronLeft, ChevronRight, RefreshCw, ArrowUp, ArrowDown,
 } from 'lucide-react'
 import { JobApplication, JobStats, JobStatus, STATUS_META, scoreColor } from '@/lib/types'
 import { useToast } from '@/components/Toast'
@@ -621,10 +621,25 @@ export default function DashboardClient({
   const [selected, setSelected] = useState<JobApplication | null>(null)
   const [filter, setFilter]     = useState<JobStatus | 'all'>('all')
   const [search, setSearch]     = useState('')
-  const [sortBy, setSort]       = useState<'date' | 'score' | 'company'>('date')
+  type SortField = 'date' | 'score' | 'company' | 'location' | 'type' | 'status'
+  const [sortBy, setSort]       = useState<SortField>('date')
+  const [sortDir, setSortDir]   = useState<'asc' | 'desc'>('desc')
   const [page, setPage]         = useState(0)
 
-  useEffect(() => { setPage(0) }, [filter, search, sortBy])
+  useEffect(() => { setPage(0) }, [filter, search, sortBy, sortDir])
+
+  const DEFAULT_SORT_DIR: Record<SortField, 'asc' | 'desc'> = {
+    date: 'desc', score: 'desc', company: 'asc', location: 'asc', type: 'asc', status: 'asc',
+  }
+
+  function toggleSort(field: SortField) {
+    if (sortBy === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSort(field)
+      setSortDir(DEFAULT_SORT_DIR[field])
+    }
+  }
 
   const stats = computeStats(jobs)
 
@@ -660,11 +675,17 @@ export default function DashboardClient({
   const filtered = jobs
     .filter(j => filter === 'all' || j.status === filter)
     .filter(j => !search || `${j.company} ${j.role} ${j.location}`.toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) =>
-      sortBy === 'score'   ? (b.fit_score ?? 0) - (a.fit_score ?? 0)
-      : sortBy === 'company' ? (a.company ?? '').localeCompare(b.company ?? '')
-      : new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    )
+    .sort((a, b) => {
+      const statusOrder = Object.keys(STATUS_META) as JobStatus[]
+      const cmp =
+        sortBy === 'score'    ? (a.fit_score ?? 0) - (b.fit_score ?? 0)
+        : sortBy === 'company' ? (a.company ?? '').localeCompare(b.company ?? '')
+        : sortBy === 'location' ? (a.location ?? '').localeCompare(b.location ?? '')
+        : sortBy === 'type'    ? (a.work_type ?? '').localeCompare(b.work_type ?? '')
+        : sortBy === 'status'  ? statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status)
+        : new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      return sortDir === 'asc' ? cmp : -cmp
+    })
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const displayed  = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -695,29 +716,15 @@ export default function DashboardClient({
       {/* Filters */}
       <div className="mb-4 flex flex-col gap-2">
 
-        {/* Row 1: search (stretches) + sort buttons */}
-        <div className="flex gap-2 items-center">
-          <div className="relative flex-1">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-600 pointer-events-none" />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search…"
-              className="pl-8 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-ink dark:text-gray-100 placeholder:text-gray-300 dark:placeholder:text-gray-600 outline-none focus:border-brand w-full"
-            />
-          </div>
-          <div className="flex gap-1.5 shrink-0">
-            {(['date', 'score', 'company'] as const).map(s => (
-              <button key={s} onClick={() => setSort(s)}
-                className={`px-3 py-2 rounded-lg text-xs font-bold border transition-colors ${
-                  sortBy === s
-                    ? 'bg-indigo-50 dark:bg-indigo-950/50 text-brand border-brand'
-                    : 'bg-white dark:bg-gray-900 text-slate dark:text-gray-400 border-gray-200 dark:border-gray-700'
-                }`}>
-                {s.charAt(0).toUpperCase() + s.slice(1)}
-              </button>
-            ))}
-          </div>
+        {/* Row 1: search */}
+        <div className="relative">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-600 pointer-events-none" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search…"
+            className="pl-8 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-ink dark:text-gray-100 placeholder:text-gray-300 dark:placeholder:text-gray-600 outline-none focus:border-brand w-full"
+          />
         </div>
 
         {/* Row 2: status pills — scrolls horizontally on mobile, wraps on desktop */}
@@ -750,9 +757,27 @@ export default function DashboardClient({
       {/* Table — desktop (md+) */}
       {displayed.length > 0 && (
         <div className="hidden md:block bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden">
-          <div className="grid gap-0" style={{ gridTemplateColumns: '52px 1.5fr 1fr 100px 72px 140px' }}>
-            {['Score', 'Company / Role', 'Location', 'Type', 'Date', 'Status'].map(h => (
-              <div key={h} className="px-4 py-3 text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-500 border-b border-gray-100 dark:border-gray-800">{h}</div>
+          <div className="grid gap-0" style={{ gridTemplateColumns: '96px 1.5fr 1fr 100px 96px 140px' }}>
+            {([
+              { label: 'Score', field: 'score' },
+              { label: 'Company / Role', field: 'company' },
+              { label: 'Location', field: 'location' },
+              { label: 'Type', field: 'type' },
+              { label: 'Date', field: 'date' },
+              { label: 'Status', field: 'status' },
+            ] as const).map(h => (
+              <div
+                key={h.label}
+                onClick={() => toggleSort(h.field)}
+                className={`px-4 py-3 text-xs font-bold uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 flex items-center gap-1 whitespace-nowrap cursor-pointer select-none hover:text-ink dark:hover:text-gray-300 ${
+                  sortBy === h.field ? 'text-brand' : 'text-slate dark:text-gray-500'
+                }`}
+              >
+                {h.label}
+                {sortBy === h.field && (
+                  sortDir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
+                )}
+              </div>
             ))}
             {displayed.map(job => (
               <div key={job.id} onClick={() => setSelected(job)} className="contents group cursor-pointer">
