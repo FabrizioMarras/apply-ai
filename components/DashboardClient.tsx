@@ -124,6 +124,71 @@ function StatusPill({ status, onChange }: { status: JobStatus; onChange: (s: Job
   )
 }
 
+// ── Row Delete Button ─────────────────────────────────────────────────────────
+
+function RowDeleteButton({ jobId, onDeleted }: { jobId: string; onDeleted: (id: string) => void }) {
+  const { toast } = useToast()
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting]     = useState(false)
+
+  async function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation()
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/delete-job', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: jobId }),
+      })
+      if (res.ok) {
+        onDeleted(jobId)
+        toast('success', 'Application deleted')
+      } else {
+        toast('error', 'Delete failed. Please try again.')
+        setDeleting(false)
+        setConfirming(false)
+      }
+    } catch {
+      toast('error', 'Delete failed. Please try again.')
+      setDeleting(false)
+      setConfirming(false)
+    }
+  }
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          title="Confirm delete"
+          className="p-1.5 rounded-lg bg-danger text-white disabled:opacity-50 hover:opacity-90 transition-opacity"
+        >
+          <Check size={13} />
+        </button>
+        <button
+          onClick={() => setConfirming(false)}
+          disabled={deleting}
+          title="Cancel"
+          className="p-1.5 rounded-lg text-slate dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        >
+          <X size={13} />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); setConfirming(true) }}
+      title="Delete application"
+      className="p-1.5 rounded-lg text-gray-300 dark:text-gray-600 hover:text-danger hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+    >
+      <Trash2 size={14} />
+    </button>
+  )
+}
+
 // ── CV Section ────────────────────────────────────────────────────────────────
 
 function CvSection({ hasCv, fileName, updatedAt, onUploaded }: {
@@ -809,30 +874,38 @@ export default function DashboardClient({
                 )}
               </div>
             ))}
-            {displayed.map(job => (
-              <div key={job.id} onClick={() => setSelected(job)} className="contents group cursor-pointer">
-                {[
-                  <div key="score" className="px-3 py-4 flex items-center border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
-                    <ScoreBadge score={job.fit_score} />
-                  </div>,
-                  <div key="company" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
-                    <p className="font-semibold text-ink dark:text-gray-100 text-sm">{job.company}</p>
-                    <p className="text-xs text-slate dark:text-gray-400 mt-0.5">{job.role}</p>
-                  </div>,
-                  <div key="loc" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 text-sm text-slate dark:text-gray-400 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">{job.location}</div>,
-                  <div key="type" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
-                    <span className={`text-xs font-semibold px-2 py-1 rounded-md capitalize ${wtBg(job.work_type)}`}>{job.work_type}</span>
-                  </div>,
-                  <div key="date" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 text-xs text-slate dark:text-gray-400 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
-                    {new Date(job.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                  </div>,
-                  <div key="status" className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40" onClick={e => e.stopPropagation()}>
-                    <StatusPill status={job.status} onChange={s => updateStatus(job.id, s)} />
-                  </div>,
-                ]}
-              </div>
-            ))}
           </div>
+          {displayed.map(job => (
+            <div
+              key={job.id}
+              onClick={() => setSelected(job)}
+              className="grid gap-0 group cursor-pointer"
+              style={{ gridTemplateColumns: '96px 1.5fr 1fr 100px 96px 140px auto' }}
+            >
+              <div className="px-3 py-4 flex items-center border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
+                <ScoreBadge score={job.fit_score} />
+              </div>
+              <div className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
+                <p className="font-semibold text-ink dark:text-gray-100 text-sm">{job.company}</p>
+                <p className="text-xs text-slate dark:text-gray-400 mt-0.5">{job.role}</p>
+              </div>
+              <div className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 text-sm text-slate dark:text-gray-400 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">{job.location}</div>
+              <div className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
+                <span className={`text-xs font-semibold px-2 py-1 rounded-md capitalize ${wtBg(job.work_type)}`}>{job.work_type}</span>
+              </div>
+              <div className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 text-xs text-slate dark:text-gray-400 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40">
+                {new Date(job.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+              </div>
+              <div className="px-4 py-4 border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40" onClick={e => e.stopPropagation()}>
+                <StatusPill status={job.status} onChange={s => updateStatus(job.id, s)} />
+              </div>
+              <div className="flex items-center border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40" onClick={e => e.stopPropagation()}>
+                <div className="hidden group-hover:flex group-focus-within:flex items-center pr-3">
+                  <RowDeleteButton jobId={job.id} onDeleted={removeJob} />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -868,6 +941,9 @@ export default function DashboardClient({
                   <span className="text-xs text-slate dark:text-gray-500">
                     {new Date(job.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                   </span>
+                  <div className="ml-auto">
+                    <RowDeleteButton jobId={job.id} onDeleted={removeJob} />
+                  </div>
                 </div>
               </div>
             </div>
