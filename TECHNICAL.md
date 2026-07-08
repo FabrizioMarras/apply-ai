@@ -1,6 +1,6 @@
 # ApplyAI — Technical Documentation
 
-> Last updated: June 2026 | Version: 0.4.0
+> Last updated: July 2026 | Version: 0.1.0
 
 ---
 
@@ -30,17 +30,19 @@ ApplyAI is a **Next.js App Router** application. All AI calls and data operation
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                     Browser (React)                      │
-│   Login → Dashboard (CV upload + job processor + table) │
+│   Landing (/) → Login → Dashboard (CV upload + job      │
+│   processor + sortable table)                            │
 │   SSE stream reader — shows live pipeline progress       │
 └───────────────────────┬─────────────────────────────────┘
                         │  HTTP / SSE
 ┌───────────────────────▼─────────────────────────────────┐
 │              Next.js API Routes (Server)                 │
 │                                                          │
-│  POST   /api/upload-cv      ← PDF parsing (pdf-parse)   │
-│  POST   /api/process-job    ← Full AI pipeline (SSE)    │
-│  PATCH  /api/update-status  ← Status + notes            │
-│  DELETE /api/delete-job     ← Remove application        │
+│  POST   /api/upload-cv        ← PDF parsing (pdf-parse) │
+│  POST   /api/process-job      ← Full AI pipeline (SSE)  │
+│  POST   /api/regenerate-docs  ← Rebuild .docx, no AI     │
+│  PATCH  /api/update-status    ← Status + notes           │
+│  DELETE /api/delete-job       ← Remove application       │
 └──────────┬──────────────────────┬───────────────────────┘
            │                      │
 ┌──────────▼──────────┐  ┌────────▼───────────────────────┐
@@ -287,6 +289,25 @@ Saving documents…
 
 **Errors (JSON):** `400`, `401`, `409`, `429`
 **Errors (SSE):** `error` event with `status: 422` or `status: 500`
+
+---
+
+### `POST /api/regenerate-docs`
+
+**Purpose:** Rebuild the `.docx` CV and cover letter for an existing job from already-stored tailored data — no AI tokens used, no re-scoring. Used to retroactively fix formatting bugs (e.g. spacing regressions) across old records without re-running the pipeline.
+
+**Request body:** `{ "id": "uuid" }`
+
+**Flow:**
+1. Validate session → get `user.id`; load the job record, scoped to `user_id`
+2. Reject with `400` if the record has no `tailored_summary`/`tailored_bullets` (nothing to rebuild — the job was skipped or never fully tailored)
+3. Build `TailoredCV` from `tailored_contact` (falling back to `user_profiles.full_name`/`location` for older records saved before `tailored_contact` existed)
+4. Rebuild the CV `.docx` always; rebuild the cover letter `.docx` only if `cover_letter_text` exists
+5. Upload both to `job-documents` under a fresh timestamped path, update `cv_file_url` / `cover_letter_url` on the row
+
+**Response:** `{ "cv_file_url": "...", "cover_letter_url": "..." }` (the new signed/public URLs, so the dashboard row updates immediately without a page reload)
+
+**Errors:** `400` (missing `id` / no tailored data to rebuild from), `401` (unauthenticated), `404` (not found or not owned by the requesting user)
 
 ---
 
@@ -543,7 +564,7 @@ Set globally via `next.config.js`:
 
 ### `app/page.tsx` (Server Component)
 
-The public marketing/landing page (`Landing.tsx`) shown at `/` to logged-out visitors — hero, "how it works," feature grid, and a GitHub CTA for the open-source repo. If a session exists, redirects straight to `/dashboard` instead of rendering the landing content.
+The public marketing/landing page (`Landing.tsx`) shown at `/` — hero, "how it works," feature grid, and a GitHub CTA for the open-source repo. Viewable by everyone, logged in or not: passes `isLoggedIn` down to `Landing`, which swaps the nav's "Log in" link for a "Dashboard" link when a session exists, rather than redirecting away from the page.
 
 ### `app/dashboard/page.tsx` (Server Component)
 
@@ -647,7 +668,26 @@ Supabase pauses projects after 7 days of inactivity. `.github/workflows/keepaliv
 
 ## 11. Deployment
 
-### Vercel (recommended)
+### Render / Railway (recommended)
+
+The pipeline runs ~20–60 seconds (depending on job board and AI response times), which exceeds Vercel's Hobby-tier serverless function limit (see below). Render and Railway run the app as a persistent Node server instead of serverless functions, so there's no hard request-duration cap to work around.
+
+**Render**: New Web Service → connect the GitHub repo → Build command `npm install && npm run build`, Start command `npm start` (runs `next start`, which automatically binds to Render's `PORT` env var — no code changes needed). Add all environment variables under the service's Environment tab. Free tier: services sleep after 15 minutes of inactivity (first request after that takes ~1 minute to wake up), 750 free instance-hours/month, no hard per-request timeout (Render allows responses up to 100 minutes).
+
+**Railway**: New Project → Deploy from GitHub repo → Nixpacks auto-detects Next.js and runs the same build/start scripts. Free trial gives a one-time $5 credit valid 30 days; after that it drops to a $1/month "Free" plan (not enough to keep a server running continuously) unless you upgrade to Hobby ($5/month, includes $5 usage).
+
+Either way, after the first deploy: set `NEXT_PUBLIC_APP_URL` to the assigned domain and redeploy, then add that domain to Supabase → Authentication → URL Configuration (Site URL + Redirect URLs) so auth email links resolve correctly.
+
+**SSE:** Server-Sent Events work out of the box on both — no proxy timeout to fight, since these aren't serverless functions. The `X-Accel-Buffering: no` header is still set to disable any intermediate proxy buffering.
+
+### Alternative: Vercel
+
+Works too, but the 20–60s pipeline duration exceeds Vercel Hobby's 10-second serverless function timeout — jobs will fail to complete on the free tier. **Vercel Pro ($20/month)** raises the limit to 60 seconds; add this to the route to opt in:
+
+```typescript
+// app/api/process-job/route.ts
+export const maxDuration = 60 // requires Vercel Pro — has no effect on Render/Railway, safe to leave in either way
+```
 
 ```bash
 npm install -g vercel
@@ -655,19 +695,6 @@ vercel
 ```
 
 Add all environment variables in Vercel dashboard → Settings → Environment Variables.
-
-**Timeout:** The pipeline runs ~20–60 seconds (depending on job board and AI response times). Vercel Hobby has a 10-second limit — **Vercel Pro ($20/month)** raises this to 60 seconds. Add this to the route:
-
-```typescript
-// app/api/process-job/route.ts
-export const maxDuration = 60 // requires Vercel Pro
-```
-
-**SSE and Vercel:** Server-Sent Events work correctly on Vercel Pro with streaming enabled. The `X-Accel-Buffering: no` header is set to disable proxy buffering and ensure events reach the browser immediately.
-
-### Alternative: Railway / Render
-
-Both support Next.js with longer timeouts on free tiers. Deploy via GitHub integration and set environment variables in their dashboards.
 
 ---
 
@@ -687,9 +714,10 @@ Both support Next.js with longer timeouts on free tiers. Deploy via GitHub integ
 - Free anonymous tier: moderate rate limit, sufficient for personal use
 - Optional `JINA_API_KEY` (free to obtain at jina.ai) for a higher quota
 
-### Vercel
-- Hobby: free, 10s function timeout (pipeline will hit this)
-- Pro: $20/month, 60s timeout — required for production use
+### Hosting
+- Render: free (services sleep after 15 min idle, 750 instance-hours/month), no hard per-request timeout — recommended
+- Railway: one-time $5 trial credit (30 days), then $5/month Hobby plan to keep a service running continuously
+- Vercel: Hobby is free but its 10s function timeout will fail the pipeline; Pro ($20/month) raises it to 60s
 
 ---
 
@@ -743,9 +771,7 @@ Allow users to upload their own `.docx` template. Parse the template structure, 
 
 Allow multiple named CV profiles (e.g. one for product roles, one for consulting). Select manually when processing a job, or auto-select based on role type.
 
-### Phase 8 — Document regeneration
-
-A "Regenerate documents" button that rebuilds the `.docx` CV and cover letter from already-stored tailored data — no AI tokens used. Allows fixing formatting issues retroactively for existing jobs without re-running the full pipeline.
+> **Shipped:** Document regeneration (`POST /api/regenerate-docs`) — a "Regenerate documents" button rebuilds the `.docx` CV and cover letter from already-stored tailored data, no AI tokens used. See §4 and §8.
 
 ---
 
@@ -786,9 +812,9 @@ Jina rate limits (anonymous tier): if many URLs are processed in a short window,
 
 Claude is prompted to return strict JSON. Occasionally (~1–2% of calls) it may return malformed JSON or include unexpected content. `parseJson()` strips markdown fences. If parsing fails, the route sends an `error` SSE event — retry the URL.
 
-### Vercel free tier timeout
+### Serverless function timeouts (Vercel specifically)
 
-The pipeline runs 4 Claude calls (two in parallel after tailoring). Total time: ~20–60 seconds. Vercel Hobby times out at 10 seconds. Use Vercel Pro or deploy to Railway/Render.
+The pipeline runs 4 Claude calls (two in parallel after tailoring). Total time: ~20–60 seconds. This is fine on Render/Railway (persistent server, no per-request cap), but Vercel Hobby's serverless functions time out at 10 seconds — use Vercel Pro (with `maxDuration = 60`) if deploying there instead.
 
 ### Rate limits
 

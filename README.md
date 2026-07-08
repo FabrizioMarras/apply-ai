@@ -4,7 +4,7 @@
 
 ![Status](https://img.shields.io/badge/status-active-brightgreen)
 ![Stack](https://img.shields.io/badge/stack-Next.js%20%7C%20Supabase%20%7C%20Claude%20API-blue)
-![License](https://img.shields.io/badge/license-MIT-lightgrey)
+[![License](https://img.shields.io/badge/license-MIT-lightgrey)](./LICENSE)
 
 > **New to coding?** Follow the [plain-English setup guide](./SETUP.md) — no experience needed.
 
@@ -36,7 +36,7 @@ A formatted .docx cover letter is built and saved
         ↓
 Everything saved to Supabase (DB + Storage)
         ↓
-Dashboard: fit scores, status tracking, download CV + cover letter (.docx), copy cover letter text
+Dashboard: fit scores, sortable table, status tracking, download CV + cover letter (.docx), copy cover letter text, regenerate documents from stored data without re-running AI
 ```
 
 ---
@@ -51,7 +51,7 @@ Dashboard: fit scores, status tracking, download CV + cover letter (.docx), copy
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/your-username/apply-ai.git
+git clone https://github.com/FabrizioMarras/apply-ai.git
 cd apply-ai
 npm install
 ```
@@ -91,6 +91,7 @@ Edit `.env.local`:
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
 ANTHROPIC_API_KEY=sk-ant-your-key-here
+JINA_API_KEY=                     # optional — raises the rate limit for the JS-rendered-page fallback fetch
 FIT_SCORE_THRESHOLD=60
 DAILY_JOB_LIMIT=10
 ```
@@ -107,7 +108,7 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ## First use
 
-1. **Sign up** with your email
+1. **Sign up** with your email (self-service signup is on by default for a fresh deploy — you can disable it later in Supabase → Authentication → Providers → Email if you want to lock the app down to invite-only, see [TECHNICAL.md §6](./TECHNICAL.md#6-authentication--security))
 2. **Upload your CV** (PDF) directly from the dashboard — text is extracted and saved once
 3. **Paste any job URL** in the "Process a new job" bar (LinkedIn, Indeed, Greenhouse, company careers pages, etc.)
 4. Watch the live progress — each pipeline step updates in real time (~20–60 seconds total)
@@ -115,14 +116,22 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## Deploy to Vercel
+## Deploy
 
+The pipeline takes 20–60 seconds per job, which exceeds Vercel's free-tier serverless timeout — **Render or Railway are recommended** since they run the app as a persistent server with no per-request time limit.
+
+**Render** (free): New Web Service → connect this GitHub repo → Build command `npm install && npm run build`, Start command `npm start` → add all variables from `.env.local` under the Environment tab. Free tier sleeps after 15 min idle (adds ~1 min to the first request after that).
+
+**Railway**: New Project → Deploy from GitHub repo → same build/start commands, auto-detected. One-time $5 trial credit for 30 days, then $5/month to keep it running continuously.
+
+**Vercel** (alternative — needs a paid plan for this app): free Hobby tier's 10-second function timeout will cause jobs to fail. Upgrade to **Vercel Pro** ($20/mo) and add `export const maxDuration = 60` to `app/api/process-job/route.ts`, then:
 ```bash
 npm install -g vercel
 vercel
 ```
+Add all variables from `.env.local` in Vercel dashboard → Settings → Environment Variables.
 
-In your Vercel dashboard → Settings → Environment Variables → add all variables from `.env.local`. The pipeline takes 20–35 seconds — upgrade to **Vercel Pro** for the 60-second function timeout, or deploy to Railway/Render (longer free-tier timeouts).
+Whichever platform you use: after the first deploy, set `NEXT_PUBLIC_APP_URL` to the assigned domain and redeploy, then add that domain to Supabase → Authentication → URL Configuration (Site URL + Redirect URLs) so auth emails work.
 
 ---
 
@@ -131,9 +140,9 @@ In your Vercel dashboard → Settings → Environment Variables → add all vari
 | What | Cost |
 |------|------|
 | Supabase | Free (500MB DB, 1GB storage) |
-| Vercel | Free (upgrade to Pro ~$20/mo for timeout) |
+| Hosting | Free on Render (or Railway's 30-day trial); Vercel needs the $20/mo Pro plan for this app |
 | Jina AI Reader | Free — used only as fallback for JS-rendered pages |
-| Claude API | ~$0.015–0.020 per job processed (prompt caching saves ~30%) |
+| Claude API | ~$0.015–0.020 per job processed (prompt caching saves ~30%) — swap in a different provider or a local model any time, see below |
 | **100 applications** | **~$1.50–2.00 total** |
 
 Skipped jobs (below fit threshold) cost ~$0.006 — only extract and score steps run.
@@ -153,7 +162,7 @@ Skipped jobs (below fit threshold) cost ~$0.006 — only extract and score steps
 | Icons | lucide-react |
 | Styling | Tailwind CSS (dark mode via `class` strategy) |
 | Progress streaming | Server-Sent Events (SSE) |
-| Deploy | Vercel / Railway / Render |
+| Deploy | Render / Railway (Vercel needs a paid plan) |
 
 ---
 
@@ -239,3 +248,9 @@ See [TECHNICAL.md](./TECHNICAL.md#13-roadmap) for the full phased plan.
 - Interview prep brief per job
 - Weekly digest email
 - Profile preferences UI (salary, work type, deal-breakers)
+
+---
+
+## License
+
+[MIT](./LICENSE) — free to fork, modify, and self-host.

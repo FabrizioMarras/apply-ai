@@ -172,11 +172,12 @@ This file tells the app your credentials. It stays on your computer and is never
 NEXT_PUBLIC_SUPABASE_URL=paste-your-supabase-project-url-here
 NEXT_PUBLIC_SUPABASE_ANON_KEY=paste-your-supabase-anon-key-here
 ANTHROPIC_API_KEY=paste-your-anthropic-key-here
+JINA_API_KEY=
 FIT_SCORE_THRESHOLD=60
 DAILY_JOB_LIMIT=10
 ```
 
-Replace the placeholder text (e.g. `paste-your-supabase-project-url-here`) with the actual values from Steps 4e and 5. Keep the formatting exactly as shown — no spaces around the `=` sign.
+Replace the placeholder text (e.g. `paste-your-supabase-project-url-here`) with the actual values from Steps 4e and 5. Keep the formatting exactly as shown — no spaces around the `=` sign. You can leave `JINA_API_KEY` blank — it's optional and only raises a rate limit on one fallback feature.
 
 4. Save the file
 
@@ -205,13 +206,13 @@ npm run dev
 Press Enter. After a few seconds you'll see something like:
 
 ```
-▲ Next.js 14.x.x
+▲ Next.js 16.x.x
 - Local: http://localhost:3000
 ```
 
 **Open your web browser and go to:** [http://localhost:3000](http://localhost:3000)
 
-You should see the ApplyAI login screen.
+You should see the ApplyAI homepage. Click **Log in** in the top right to sign up or log in.
 
 ---
 
@@ -299,6 +300,6 @@ $5 of Anthropic credit covers roughly 200–300 full job analyses.
 
 ## Deploying online (optional)
 
-If you want the app to be accessible from any device — not just your computer — you can deploy it to [Vercel](https://vercel.com) (free tier). This lets you use it from your phone or anywhere without keeping your computer on.
+If you want the app to be accessible from any device — not just your computer — you can deploy it to a hosting service for free. This lets you use it from your phone or anywhere without keeping your computer on.
 
-See the **Deploy to Vercel** section in the [README](./README.md) for instructions. You'll need a free Vercel account and to connect your GitHub repository.
+[Render](https://render.com) is the easiest free option (Vercel's free tier isn't quite big enough for this particular app). See the **Deploy** section in the [README](./README.md) for instructions. You'll need a free Render account and to connect your GitHub repository.

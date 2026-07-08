@@ -28,7 +28,7 @@ export default function Navbar({ userEmail }: { userEmail: string }) {
 
   return (
     <nav className="bg-white dark:bg-gray-950 border-b border-gray-100 dark:border-gray-800 h-14 flex items-center px-6 justify-between sticky top-0 z-30">
-      <Link href="/dashboard" className="flex items-center gap-2.5 group">
+      <Link href="/" className="flex items-center gap-2.5 group">
         <svg viewBox="0 0 32 32" className="w-7 h-7 shrink-0">
           <rect width="32" height="32" rx="6" fill="#4f46e5"/>
           <text x="16" y="23" textAnchor="middle" fontFamily="system-ui,-apple-system,sans-serif" fontSize="20" fontWeight="700" fill="white">A</text>

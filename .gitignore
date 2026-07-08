@@ -3,6 +3,7 @@ node_modules/
 .pnp
 .pnp.js
 
+
 # Environment variables
 .env
 .env.local
@@ -31,3 +32,6 @@ next-env.d.ts
 
 # Vercel
 .vercel
+
+#Files
+Apply-ai.pdf

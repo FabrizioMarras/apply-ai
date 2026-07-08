@@ -145,13 +145,13 @@ const features = [
   { title: 'Your data, your infra',  desc: 'Runs on your own Supabase project and API keys. Nothing leaves infrastructure you control.', icon: ShieldCheck },
 ]
 
-export default function Landing() {
+export default function Landing({ isLoggedIn }: { isLoggedIn: boolean }) {
   return (
     <div className="relative overflow-x-hidden">
 
       {/* ── Nav ──────────────────────────────────────────────────────────── */}
       <nav className="relative z-20 max-w-6xl mx-auto px-6 sm:px-8 py-6 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
+        <Link href="/" className="flex items-center gap-2.5">
           <svg viewBox="0 0 32 32" className="w-7 h-7 shrink-0">
             <rect width="32" height="32" rx="6" fill="#4f46e5" />
             <text x="16" y="23" textAnchor="middle" fontFamily="system-ui,-apple-system,sans-serif" fontSize="20" fontWeight="700" fill="white">A</text>
@@ -159,16 +159,23 @@ export default function Landing() {
           <span className="font-extrabold text-sm text-ink dark:text-white tracking-tight">
             Apply<span className="text-brand">AI</span>
           </span>
-        </div>
+        </Link>
         <div className="flex items-center gap-5">
           <a href={REPO_URL} target="_blank" rel="noreferrer"
             className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-slate dark:text-gray-400 hover:text-ink dark:hover:text-white transition-colors">
             <GitFork size={15} /> GitHub
           </a>
-          <Link href="/login"
-            className="text-xs font-semibold text-slate dark:text-gray-400 hover:text-ink dark:hover:text-white transition-colors">
-            Log in
-          </Link>
+          {isLoggedIn ? (
+            <Link href="/dashboard"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-brand text-white text-xs font-bold hover:bg-indigo-600 transition-colors">
+              <LayoutGrid size={13} /> Dashboard
+            </Link>
+          ) : (
+            <Link href="/login"
+              className="text-xs font-semibold text-slate dark:text-gray-400 hover:text-ink dark:hover:text-white transition-colors">
+              Log in
+            </Link>
+          )}
         </div>
       </nav>
 
