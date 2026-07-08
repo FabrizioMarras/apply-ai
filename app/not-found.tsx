@@ -13,7 +13,7 @@ export default function NotFound() {
           href="/"
           className="inline-block px-6 py-3 bg-brand text-white rounded-xl font-bold text-sm hover:bg-indigo-700 transition-colors"
         >
-          ← Back to dashboard
+          ← Back home
         </Link>
       </div>
     </div>

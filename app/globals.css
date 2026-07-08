@@ -9,3 +9,30 @@
 
 .dark ::-webkit-scrollbar-thumb { background: #374151; }
 .dark ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+
+/* ── Landing page ─────────────────────────────────────────────────────────── */
+
+@keyframes landing-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.landing-rise {
+  opacity: 0;
+  animation: landing-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.landing-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.035;
+}
+
+.dark .landing-grain { opacity: 0.06; }
+
+/* Shrinks the fixed-width dashboard mockup to fit its frame using `zoom` (not `transform: scale`),
+   because zoom affects layout sizing — the frame auto-sizes to the shrunk content's real height,
+   so nothing gets cropped the way a fixed-height + overflow-hidden "cover" would. */
+.landing-mockup { zoom: 0.5; }
+@media (min-width: 640px)  { .landing-mockup { zoom: 0.64; } }
+@media (min-width: 1024px) { .landing-mockup { zoom: 0.58; } }
+@media (min-width: 1280px) { .landing-mockup { zoom: 0.62; } }

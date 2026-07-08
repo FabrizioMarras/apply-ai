@@ -90,6 +90,8 @@ apply-ai/
 │   │   │   └── route.ts          # CV upload: PDF → text → upserts user_profiles
 │   │   ├── process-job/
 │   │   │   └── route.ts          # Full AI pipeline — SSE streaming (see §5)
+│   │   ├── regenerate-docs/
+│   │   │   └── route.ts          # Rebuild CV + cover letter .docx from stored tailored data
 │   │   ├── update-status/
 │   │   │   └── route.ts          # PATCH: update status or notes
 │   │   └── delete-job/
@@ -97,14 +99,17 @@ apply-ai/
 │   │
 │   ├── login/
 │   │   └── page.tsx              # Email/password auth (client component)
-│   ├── page.tsx                  # Dashboard: server component, fetches jobs
+│   ├── dashboard/
+│   │   └── page.tsx              # Dashboard: server component, fetches jobs (auth required)
+│   ├── page.tsx                  # Public landing page — redirects to /dashboard if logged in
 │   ├── layout.tsx                # Root layout: Inter font, anti-flicker theme script, ToastProvider, ErrorBoundary
 │   ├── icon.svg                  # Favicon (brand colour + "A")
 │   ├── not-found.tsx             # Custom 404 page
-│   └── globals.css               # Tailwind base + dark scrollbar styles
+│   └── globals.css               # Tailwind base + dark scrollbar styles + landing page keyframes/texture
 │
 ├── components/
 │   ├── DashboardClient.tsx       # Main interactive UI (see §8)
+│   ├── Landing.tsx               # Public marketing page content (hero, how-it-works, features, GitHub CTA)
 │   ├── Navbar.tsx                # Sticky top nav: logo, email, dark-mode toggle, sign out
 │   ├── Toast.tsx                 # ToastProvider + useToast() hook
 │   └── ErrorBoundary.tsx         # React error boundary with recovery UI
@@ -117,12 +122,13 @@ apply-ai/
 ├── supabase/
 │   └── schema.sql                # Full DB schema: tables, RLS, indexes, stats view (deprecated)
 │
-├── proxy.ts                      # Auth session helper (Supabase SSR pattern)
+├── proxy.ts                      # Auth session helper (Supabase SSR pattern) — / and /login are public, everything else requires a session
 ├── next.config.js                # External packages config + security headers
 ├── tailwind.config.js            # Custom colors + darkMode: 'class'
 ├── tsconfig.json
 ├── package.json
 ├── .env.example                  # Environment variable template
+├── LICENSE                       # MIT
 ├── README.md
 ├── SETUP.md                      # Plain-English setup guide for non-developers
 └── TECHNICAL.md                  # This file
@@ -487,9 +493,10 @@ Authentication is handled entirely by **Supabase Auth** (email + password). Sess
 
 ### Auth flow
 
-- **Login / signup:** `app/login/page.tsx` — client component, calls Supabase Auth directly in the browser.
-- **Protected pages:** `app/page.tsx` and any other server components call `supabase.auth.getUser()` and `redirect('/login')` if no session. This is the primary auth guard.
-- **`proxy.ts`:** Contains a Supabase SSR session helper and route matcher. Handles session cookie refresh and auth redirects.
+- **Login / signup:** `app/login/page.tsx` — client component, calls Supabase Auth directly in the browser. Public signup is disabled at the Supabase project level (Authentication → Providers → Email → "Allow new users to sign up" off) — new accounts are created by the project owner via Supabase's Invite User flow, not self-service.
+- **Public pages:** `/` (the marketing landing page, `app/page.tsx`) and `/login` are the only routes reachable without a session.
+- **Protected pages:** `app/dashboard/page.tsx` and any other server components call `supabase.auth.getUser()` and `redirect('/login')` if no session. This is the primary auth guard.
+- **`proxy.ts`:** Contains a Supabase SSR session helper and route matcher. Redirects unauthenticated requests to `/login` for every path except `/` and `/login`; redirects an authenticated user hitting `/login` to `/dashboard`.
 
 ### API route auth pattern
 
@@ -536,7 +543,11 @@ Set globally via `next.config.js`:
 
 ### `app/page.tsx` (Server Component)
 
-Fetches the session, user profile, and all job applications in parallel. Passes `initialJobs` and `initialHasCv` to `DashboardClient`. Stats are not fetched from the DB — they are derived from the job list client-side.
+The public marketing/landing page (`Landing.tsx`) shown at `/` to logged-out visitors — hero, "how it works," feature grid, and a GitHub CTA for the open-source repo. If a session exists, redirects straight to `/dashboard` instead of rendering the landing content.
+
+### `app/dashboard/page.tsx` (Server Component)
+
+The actual app, formerly at `/`. Fetches the session, user profile, and all job applications in parallel. Passes `initialJobs` and `initialHasCv` to `DashboardClient`. Stats are not fetched from the DB — they are derived from the job list client-side.
 
 ### `DashboardClient.tsx` (Client Component)
 
