@@ -4,6 +4,7 @@ import Script from 'next/script'
 import './globals.css'
 import { ToastProvider } from '@/components/Toast'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import Footer from '@/components/Footer'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -25,11 +26,14 @@ const themeScript = `
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} bg-mist dark:bg-gray-950 min-h-screen transition-colors duration-200`}>
+      <body className={`${inter.className} bg-mist dark:bg-gray-950 min-h-screen flex flex-col transition-colors duration-200`}>
         <Script id="theme-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: themeScript }} />
         <ErrorBoundary>
           <ToastProvider>
-            {children}
+            <div className="flex-1 flex flex-col">
+              {children}
+            </div>
+            <Footer />
           </ToastProvider>
         </ErrorBoundary>
       </body>

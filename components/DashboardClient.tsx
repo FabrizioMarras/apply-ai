@@ -2,13 +2,21 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   CheckCircle2, Upload, FileText, Download, ExternalLink,
-  Copy, Check, Trash2, X, Search, Link2,
-  ChevronLeft, ChevronRight, RefreshCw, ArrowUp, ArrowDown,
+  Copy, Check, Trash2, X, Search, Link2, Archive, ArchiveRestore,
+  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, RefreshCw, ArrowUp, ArrowDown,
 } from 'lucide-react'
 import { JobApplication, JobStats, JobStatus, STATUS_META, scoreColor } from '@/lib/types'
 import { useToast } from '@/components/Toast'
 
 const PAGE_SIZE = 20
+
+// Days of inactivity (no status change) before a job auto-archives. Terminal
+// statuses have no pending decision left, so they archive sooner than live
+// pipeline stages that might still need a follow-up.
+const ARCHIVE_STALE_DAYS: Record<JobStatus, number> = {
+  new: 60, applied: 60, interviewing: 60,
+  rejected: 21, offer: 21, skipped: 21,
+}
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
 
@@ -185,6 +193,60 @@ function RowDeleteButton({ jobId, onDeleted }: { jobId: string; onDeleted: (id: 
       className="p-1.5 rounded-lg text-gray-300 dark:text-gray-600 hover:text-danger hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
     >
       <Trash2 size={14} />
+    </button>
+  )
+}
+
+// ── Row Archive Button ────────────────────────────────────────────────────────
+
+function RowArchiveButton({ job, archived, onArchive, onUnarchive }: {
+  job: JobApplication
+  archived: boolean
+  onArchive: (id: string) => Promise<void>
+  onUnarchive: (job: JobApplication) => Promise<void>
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy]             = useState(false)
+
+  async function handleConfirm(e: React.MouseEvent) {
+    e.stopPropagation()
+    setBusy(true)
+    if (archived) await onUnarchive(job)
+    else await onArchive(job.id)
+    setBusy(false)
+    setConfirming(false)
+  }
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+        <button
+          onClick={handleConfirm}
+          disabled={busy}
+          title={archived ? 'Confirm restore' : 'Confirm archive'}
+          className="p-1.5 rounded-lg bg-brand text-white disabled:opacity-50 hover:opacity-90 transition-opacity"
+        >
+          <Check size={13} />
+        </button>
+        <button
+          onClick={() => setConfirming(false)}
+          disabled={busy}
+          title="Cancel"
+          className="p-1.5 rounded-lg text-slate dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+        >
+          <X size={13} />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); setConfirming(true) }}
+      title={archived ? 'Restore to active' : 'Archive application'}
+      className="p-1.5 rounded-lg text-gray-300 dark:text-gray-600 hover:text-brand hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors"
+    >
+      {archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
     </button>
   )
 }
@@ -700,6 +762,7 @@ export default function DashboardClient({
   initialCvFileName: string | null
   initialCvUpdatedAt: string | null
 }) {
+  const { toast } = useToast()
   const [jobs, setJobs]             = useState(initialJobs)
   const [hasCv, setHasCv]           = useState(initialHasCv)
   const [cvFileName, setCvFileName] = useState(initialCvFileName)
@@ -711,6 +774,7 @@ export default function DashboardClient({
   const [sortBy, setSort]       = useState<SortField>('date')
   const [sortDir, setSortDir]   = useState<'asc' | 'desc'>('desc')
   const [page, setPage]         = useState(0)
+  const [archiveOpen, setArchiveOpen] = useState(false)
 
   useEffect(() => { setPage(0) }, [filter, search, sortBy, sortDir])
 
@@ -758,7 +822,43 @@ export default function DashboardClient({
     if (selected?.id === id) setSelected(s => s ? { ...s, cv_file_url, cover_letter_url } : null)
   }
 
-  const filtered = jobs
+  async function archiveJob(id: string) {
+    const nowIso = new Date().toISOString()
+    await fetch('/api/update-status', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, archived_at: nowIso }),
+    })
+    setJobs(js => js.map(j => j.id === id ? { ...j, archived_at: nowIso } : j))
+    toast('success', 'Application archived')
+  }
+
+  async function unarchiveJob(job: JobApplication) {
+    // Clearing archived_at removes any manual override; the update also
+    // bumps `updated_at` via the DB trigger, resetting the staleness clock
+    // an auto-archived (never manually archived) row was based on.
+    const nowIso = new Date().toISOString()
+    await fetch('/api/update-status', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: job.id, archived_at: null }),
+    })
+    setJobs(js => js.map(j => j.id === job.id ? { ...j, archived_at: null, updated_at: nowIso } : j))
+    toast('success', 'Moved back to active applications')
+  }
+
+  const archivedJobs = jobs
+    .filter(j => Boolean(j.archived_at)
+      || Date.now() - new Date(j.updated_at).getTime() > ARCHIVE_STALE_DAYS[j.status] * 24 * 60 * 60 * 1000)
+    .sort((a, b) => {
+      const aTime = a.archived_at ? new Date(a.archived_at).getTime() : new Date(a.updated_at).getTime()
+      const bTime = b.archived_at ? new Date(b.archived_at).getTime() : new Date(b.updated_at).getTime()
+      return aTime - bTime
+    })
+  const archivedIds  = new Set(archivedJobs.map(j => j.id))
+  const activeJobs   = jobs.filter(j => !archivedIds.has(j.id))
+
+  const filtered = activeJobs
     .filter(j => filter === 'all' || j.status === filter)
     .filter(j => !search || `${j.company} ${j.role} ${j.location}`.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
@@ -900,7 +1000,8 @@ export default function DashboardClient({
                 <StatusPill status={job.status} onChange={s => updateStatus(job.id, s)} />
               </div>
               <div className="flex items-center border-b border-gray-50 dark:border-gray-800 group-hover:bg-gray-50/80 dark:group-hover:bg-gray-800/40" onClick={e => e.stopPropagation()}>
-                <div className="hidden group-hover:flex group-focus-within:flex items-center pr-3">
+                <div className="hidden group-hover:flex group-focus-within:flex items-center gap-0.5 pr-3">
+                  <RowArchiveButton job={job} archived={false} onArchive={archiveJob} onUnarchive={unarchiveJob} />
                   <RowDeleteButton jobId={job.id} onDeleted={removeJob} />
                 </div>
               </div>
@@ -941,7 +1042,8 @@ export default function DashboardClient({
                   <span className="text-xs text-slate dark:text-gray-500">
                     {new Date(job.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                   </span>
-                  <div className="ml-auto">
+                  <div className="ml-auto flex items-center gap-0.5">
+                    <RowArchiveButton job={job} archived={false} onArchive={archiveJob} onUnarchive={unarchiveJob} />
                     <RowDeleteButton jobId={job.id} onDeleted={removeJob} />
                   </div>
                 </div>
@@ -980,6 +1082,50 @@ export default function DashboardClient({
           </div>
         )}
       </div>
+
+      {/* Archive — applications idle past their status's staleness window (see ARCHIVE_STALE_DAYS) */}
+      {archivedJobs.length > 0 && (
+        <div className="mt-8">
+          <button
+            onClick={() => setArchiveOpen(o => !o)}
+            className="w-full flex items-center justify-between px-1 py-2 text-left group"
+          >
+            <span className="text-xs font-bold uppercase tracking-widest text-slate dark:text-gray-500 group-hover:text-ink dark:group-hover:text-gray-300">
+              Archive · {archivedJobs.length} inactive {archivedJobs.length === 1 ? 'application' : 'applications'}
+            </span>
+            {archiveOpen
+              ? <ChevronUp size={14} className="text-slate dark:text-gray-500" />
+              : <ChevronDown size={14} className="text-slate dark:text-gray-500" />}
+          </button>
+
+          {archiveOpen && (
+            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 overflow-hidden divide-y divide-gray-50 dark:divide-gray-800">
+              {archivedJobs.map(job => (
+                <div
+                  key={job.id}
+                  onClick={() => setSelected(job)}
+                  className="flex items-center gap-3 px-4 py-3.5 cursor-pointer hover:bg-gray-50/80 dark:hover:bg-gray-800/40 transition-colors"
+                >
+                  <div className="shrink-0">
+                    <ScoreBadge score={job.fit_score} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm text-ink dark:text-gray-100 truncate">{job.company}</p>
+                    <p className="text-xs text-slate dark:text-gray-400 truncate">{job.role}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-600 mt-0.5">
+                      {job.archived_at ? 'Archived' : 'Inactive'} since {new Date(job.archived_at ?? job.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+                    <RowArchiveButton job={job} archived={true} onArchive={archiveJob} onUnarchive={unarchiveJob} />
+                    <RowDeleteButton jobId={job.id} onDeleted={removeJob} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {selected && (
         <DetailPanel

@@ -306,22 +306,6 @@ export default function Landing({ isLoggedIn }: { isLoggedIn: boolean }) {
         </div>
       </section>
 
-      {/* ── Footer ───────────────────────────────────────────────────────── */}
-      <footer className="border-t border-gray-100 dark:border-gray-800">
-        <div className="max-w-6xl mx-auto px-6 sm:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-xs text-slate dark:text-gray-500">
-            <svg viewBox="0 0 32 32" className="w-5 h-5 shrink-0">
-              <rect width="32" height="32" rx="6" fill="#4f46e5" />
-              <text x="16" y="23" textAnchor="middle" fontFamily="system-ui,-apple-system,sans-serif" fontSize="20" fontWeight="700" fill="white">A</text>
-            </svg>
-            © {new Date().getFullYear()} ApplyAI — MIT licensed
-          </div>
-          <a href={REPO_URL} target="_blank" rel="noreferrer"
-            className="flex items-center gap-1.5 text-xs font-semibold text-slate dark:text-gray-400 hover:text-ink dark:hover:text-white transition-colors">
-            <GitFork size={14} /> github.com/FabrizioMarras/apply-ai
-          </a>
-        </div>
-      </footer>
     </div>
   )
 }

@@ -31,7 +31,7 @@ export default function LoginPage() {
 
   if (confirming) {
     return (
-      <div className="min-h-screen bg-mist dark:bg-gray-950 flex items-center justify-center px-4">
+      <div className="flex-1 bg-mist dark:bg-gray-950 flex items-center justify-center px-4">
         <div className="bg-white dark:bg-gray-900 rounded-2xl p-10 w-full max-w-sm shadow-sm border border-gray-100 dark:border-gray-800 text-center">
           <div className="w-12 h-12 bg-brand/10 rounded-xl inline-flex items-center justify-center mb-4 mx-auto">
             <Mail size={24} className="text-brand" />
@@ -51,7 +51,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-mist dark:bg-gray-950 flex items-center justify-center px-4">
+    <div className="flex-1 bg-mist dark:bg-gray-950 flex items-center justify-center px-4">
       <div className="bg-white dark:bg-gray-900 rounded-2xl p-10 w-full max-w-sm shadow-sm border border-gray-100 dark:border-gray-800">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">

@@ -30,6 +30,7 @@ export interface JobApplication {
   tailored_languages: string[] | null
   status: JobStatus
   notes: string | null
+  archived_at: string | null
   created_at: string
   applied_at: string | null
   updated_at: string

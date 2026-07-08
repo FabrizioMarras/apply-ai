@@ -9,7 +9,7 @@ export async function PATCH(req: NextRequest) {
   const { data: { user }, error: authErr } = await supabase.auth.getUser()
   if (authErr || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { id, status, notes } = await req.json()
+  const { id, status, notes, archived_at } = await req.json()
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 })
   if (status && !VALID_STATUSES.includes(status)) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
@@ -21,6 +21,7 @@ export async function PATCH(req: NextRequest) {
     if (status === 'applied') update.applied_at = new Date().toISOString()
   }
   if (notes !== undefined) update.notes = notes
+  if (archived_at !== undefined) update.archived_at = archived_at
 
   const { error } = await supabase
     .from('job_applications')

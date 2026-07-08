@@ -55,6 +55,8 @@ CREATE TABLE job_applications (
   status              text DEFAULT 'new'
                       CHECK (status IN ('new','applied','interviewing','offer','rejected','skipped')),
   notes               text,
+  archived_at         timestamptz,   -- set when the user manually archives; NULL means "not manually archived"
+                                     -- (the dashboard also auto-archives stale rows client-side, see TECHNICAL.md)
 
   created_at          timestamptz DEFAULT now(),
   applied_at          timestamptz,
@@ -124,3 +126,4 @@ GROUP BY auth.uid();
 
 -- 8. MIGRATIONS (for databases created before this line was added)
 -- ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS cv_file_name text;
+-- ALTER TABLE job_applications ADD COLUMN IF NOT EXISTS archived_at timestamptz;
